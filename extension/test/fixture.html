@@ -6,19 +6,25 @@
   <style>
     body { margin: 0; font: 15px sans-serif; background: #F1DCBA; color: #484149; }
     main { width: 720px; padding: 24px; }
-    [data-message-author-role] { margin: 0 0 22px; padding: 14px; border: 1px solid #5B5F8D; }
+    chat-message { display: block; margin: 0 0 22px; padding: 14px; border: 1px solid #5B5F8D; }
   </style>
 </head>
 <body>
-  <main role="main">
-    <div data-message-author-role="assistant" data-message-id="a0">
-      <div class="message-content">Hi! How can I help you today?</div>
+  <div class="message-content">Loading</div>
+  <chat-panel>
+  <main class="chat-panel-content" role="main">
+    <chat-message>
+      <div class="to-user-message-inner-content" data-message-id="a0">
+      <div class="message-text-content">Hi! How can I help you today?</div>
     </div>
+    </chat-message>
 
-    <div data-message-author-role="user" data-message-id="u0">Explain gradient descent and its convergence bound.</div>
+    <chat-message><div class="user-message" data-message-id="u0">Explain gradient descent and its convergence bound.</div></chat-message>
 
-    <div data-message-author-role="assistant" data-message-id="a1">
-      <div class="message-content">
+    <chat-message>
+      <div class="to-user-message-inner-content" data-message-id="a1">
+      <div class="message-text-content">
+        <thinking-chain-view>Internal thinking placeholder</thinking-chain-view>
         <h2>Gradient descent</h2>
         <p>The update rule is
           <span class="katex"><annotation encoding="application/x-tex">\theta_{t+1} = \theta_t - \eta \nabla_\theta L</annotation><span class="katex-html" aria-hidden="true">garbled render</span></span>.
@@ -36,18 +42,24 @@
 Target ──[T]───</code></pre>
       </div>
     </div>
+    </chat-message>
 
-    <div data-message-author-role="assistant" data-message-id="a2">
-      <div class="message-content">
+    <chat-message>
+      <div class="to-user-message-inner-content" data-message-id="a2">
+      <div class="message-text-content">
         <h2>From chat to PDF</h2>
         <p>The exporter has four steps and never sends your notes anywhere.</p>
         <ul><li>Capture</li><li>Clean</li><li>Enhance</li></ul>
       </div>
     </div>
+    </chat-message>
 
-    <div data-message-author-role="assistant" data-message-id="a9">
-      <div class="message-content">Let me know if you need anything else.</div>
+    <chat-message>
+      <div class="to-user-message-inner-content" data-message-id="a9">
+      <div class="message-text-content">Let me know if you need anything else.</div>
     </div>
+    </chat-message>
   </main>
+  </chat-panel>
 </body>
 </html>

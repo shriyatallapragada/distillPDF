@@ -32,8 +32,8 @@ project root.
 
 - Answers found on the page are listed with a checkbox. **All start unchecked**;
   tick only what you want, or use **Select all** / **Clear**.
-- Short greeting and closing replies at the two ends of the chat are dropped
-  automatically, so boilerplate never reaches the PDF.
+- The cleaner removes recognized standalone greetings and sign-offs at the ends
+  of the selection. Replies that contain study material are kept.
 - To export only a passage, select the text on the page and click **Add
   highlighted text**.
 - Click **Build PDF + HTML**. The local helper runs the whole pipeline and

@@ -2,7 +2,7 @@
 (function () {
   const SKIP = new Set([
     'script', 'style', 'svg', 'noscript', 'iframe', 'annotation',
-    'button', 'input', 'select', 'textarea', 'template'
+    'button', 'input', 'select', 'textarea', 'template', 'thinking-chain-view'
   ]);
 
   /* Raw text is never trimmed or whitespace-collapsed here: the Markdown

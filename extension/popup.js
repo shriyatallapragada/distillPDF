@@ -3,14 +3,19 @@ const listEl = document.getElementById('list');
 const pickerEl = document.getElementById('picker');
 let readyTabId = null;
 let lastTab = null;
+const NOTEBOOK_ORIGINS = new Set(['https://notebook.google.com', 'https://notebooklm.google.com']);
 
 function note(message) { statusEl.textContent = message; }
 function sleep(milliseconds) {
   return new Promise(function (resolve) { setTimeout(resolve, milliseconds); });
 }
-function isWebTab(tab) { return Boolean(tab && /^https?:/i.test(tab.url || '')); }
-function looksLikeChat(tab) {
-  return /notebooklm/i.test((tab.url || '') + ' ' + (tab.title || ''));
+function isNotebookTab(tab) {
+  try {
+    const url = new URL(tab.url);
+    return NOTEBOOK_ORIGINS.has(url.origin) && /^\/notebook\/[^/]+/.test(url.pathname);
+  } catch (error) {
+    return false;
+  }
 }
 function hostOf(url) {
   try { return new URL(url).host; } catch (error) { return url || ''; }
@@ -37,20 +42,21 @@ function messageTab(tabId, type, value) {
 
 async function findNotebookTab() {
   const active = (await queryTabs({ active: true, currentWindow: true }))[0];
-  if (active && isWebTab(active) && looksLikeChat(active)) return active;
+  if (isNotebookTab(active)) return active;
 
   const all = await queryTabs({});
-  const matches = (all || []).filter(function (tab) {
-    return isWebTab(tab) && looksLikeChat(tab);
-  });
+  const matches = (all || []).filter(isNotebookTab);
   matches.sort(function (a, b) { return (b.lastAccessed || 0) - (a.lastAccessed || 0); });
   return matches[0] || null;
 }
 
 async function ensurePicker(tab) {
-  if (!isWebTab(tab)) {
-    throw new Error('Choose a web tab below, or open a NotebookLM chat first.');
+  // A tab may have navigated away since we listed or last used it.
+  const current = isNotebookTab(tab) ? await chrome.tabs.get(tab.id).catch(() => null) : null;
+  if (!isNotebookTab(current)) {
+    throw new Error('Open a NotebookLM chat or choose an existing NotebookLM tab.');
   }
+  tab = current;
   // If we already have a live content script in this tab, reuse it.
   if (readyTabId === tab.id) {
     try {
@@ -101,17 +107,19 @@ async function ensurePicker(tab) {
 
 async function showTabPicker() {
   const all = await queryTabs({});
-  const tabs = (all || []).filter(isWebTab).sort(function (a, b) {
+  const tabs = (all || []).filter(isNotebookTab).sort(function (a, b) {
     return (b.lastAccessed || 0) - (a.lastAccessed || 0);
   });
+  const canReload = lastTab && tabs.some(function (tab) { return tab.id === lastTab.id; });
   pickerEl.hidden = false;
-  pickerEl.innerHTML = '<strong>Choose the chat tab</strong>' +
+  pickerEl.innerHTML = (tabs.length ? '<strong>Choose a NotebookLM tab</strong>' : '') +
     tabs.map(function (tab) {
       return '<button type="button" data-tab-id="' + tab.id + '">' +
         escapeHtml(tab.title || '(untitled)') +
         '<small>' + escapeHtml(hostOf(tab.url)) + '</small></button>';
     }).join('') +
-    '<button type="button" data-action="reload">Reload chosen tab and retry</button>';
+    (canReload ? '<button type="button" data-action="reload">Reload chosen tab and retry</button>' : '') +
+    '<button type="button" data-action="open">Open NotebookLM</button>';
 
   pickerEl.querySelectorAll('[data-tab-id]').forEach(function (button) {
     button.addEventListener('click', function () {
@@ -120,10 +128,20 @@ async function showTabPicker() {
       if (tab) connectTo(tab);
     });
   });
-  pickerEl.querySelector('[data-action="reload"]').addEventListener('click', function () {
-    if (lastTab) chrome.tabs.reload(lastTab.id);
+  const reload = pickerEl.querySelector('[data-action="reload"]');
+  if (reload) reload.addEventListener('click', async function () {
+    const tab = await chrome.tabs.get(lastTab.id).catch(() => null);
+    if (!isNotebookTab(tab)) {
+      lastTab = null;
+      refresh();
+      return;
+    }
     note('Reloading…');
-    setTimeout(function () { refresh(lastTab); }, 1500);
+    await chrome.tabs.reload(tab.id).catch(() => {});
+    setTimeout(function () { refresh(tab); }, 1500);
+  });
+  pickerEl.querySelector('[data-action="open"]').addEventListener('click', function () {
+    chrome.tabs.create({ url: 'https://notebook.google.com/' });
   });
 }
 
@@ -131,23 +149,17 @@ async function connectTo(tab) {
   pickerEl.hidden = true;
   lastTab = tab;
   note('Connecting to ' + hostOf(tab.url) + '…');
-  try {
-    await refresh(tab);
-  } catch (error) {
-    note(error.message);
-    showTabPicker();
-  }
+  await refresh(tab);
 }
 
 async function send(type, value, tab) {
   const target = tab || await findNotebookTab();
   if (!target) {
-    showTabPicker();
-    throw new Error('No chat tab found — choose one below.');
+    throw new Error('Open a NotebookLM chat first.');
   }
   lastTab = target;
-  await ensurePicker(target);
-  return messageTab(target.id, type, value);
+  const ready = await ensurePicker(target);
+  return messageTab(ready.id, type, value);
 }
 
 function render(turns, status) {
@@ -159,10 +171,11 @@ function render(turns, status) {
   }
   listEl.innerHTML = turns.map(function (turn) {
     const preview = turn.preview.replace(/[#*`>\[\]]/g, ' ').replace(/\s+/g, ' ');
-    return '<label class="pop-item" data-key="' + turn.key + '">' +
-      '<input type="checkbox" data-check="' + turn.key + '"' + (turn.selected ? ' checked' : '') + '>' +
+    const key = escapeHtml(turn.key);
+    return '<label class="pop-item" data-key="' + key + '">' +
+      '<input type="checkbox" data-check="' + key + '"' + (turn.selected ? ' checked' : '') + '>' +
       '<span><strong>Answer ' + turn.index + ' · ' + turn.words + ' words</strong>' +
-      '<span>' + preview.slice(0, 72) + '</span></span></label>';
+      '<span>' + escapeHtml(preview.slice(0, 72)) + '</span></span></label>';
   }).join('');
 }
 
@@ -173,6 +186,8 @@ async function refresh(forceTab) {
     render(turns, status && status.status);
   } catch (error) {
     note(error.message);
+    listEl.replaceChildren();
+    await showTabPicker();
   }
 }
 

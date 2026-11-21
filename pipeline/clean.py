@@ -63,7 +63,7 @@ _PROMPT_CLARIFICATION_RE = re.compile(
     r"(forgotten to list|please let me know which|if you'd like, i can)",
     re.I,
 )
-_PROMPT_PREFIX_RE = re.compile(r"^(.{1,400}?)\n\s*---\s*\n(?=\S)", re.S)
+_PROMPT_PREFIX_RE = re.compile(r"^([^\n]{1,400})\n\s*---\s*\n(?=\S)")
 
 
 def is_user_prompt_turn(text: str) -> bool:
@@ -176,8 +176,7 @@ def clean(
             text = strip_citations(text)
 
         # Strip NotebookLM intro/outro boilerplate only from the first/last
-        # assistant turn, and only when it is short greeting/closing text
-        # with no real study content. All other text is preserved verbatim.
+        # assistant turn, and only if the whole reply matches a known phrase.
         if ordinal == 1 and is_notebooklm_boilerplate(text, "start"):
             text = ""
         if ordinal == total and is_notebooklm_boilerplate(text, "end"):

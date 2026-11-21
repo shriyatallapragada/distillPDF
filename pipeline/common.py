@@ -23,7 +23,6 @@ ANSWER_END = "<!-- nlmdf:end -->"
 DEFAULT_CONFIG: dict[str, Any] = {
     "model": "qwen3:8b",
     "ollama_url": "http://localhost:11434",
-    "max_word_loss": 0.05,
     "strip_citations": True,
     "page_size": "A4",
     "enhance": {
@@ -142,44 +141,22 @@ _CITATION_RES = (
 )
 _BULLET_RE = re.compile(r"(?m)^[ \t]*[*+-][ \t]+(.*)$")
 
-# NotebookLM boilerplate: short greeting at start, short closing at end.
-# These are dropped only when they are the first/last assistant turn and
-# contain no real study content (no headings, tables, formulas, or diagrams).
+# Only whole, known conversational replies qualify for automatic removal.
 _NLM_INTRO_RE = re.compile(
-    r"^\s*(hi|hello|hey|greetings|welcome|ok(ay)?|sure)\b.*?"
-    r"(how can i help|how may i assist|what (would|can|do) you like|"
-    r"what (shall|should) we|get started|ready to help)",
-    re.I | re.S,
+    r"(?:hi|hello|hey)[.!]?[ \t]+how can i help(?: you)?(?: today)?[?]?",
+    re.I,
 )
 _NLM_OUTRO_RE = re.compile(
-    r"(anything else|let me know|hope (this|that) helps|happy to help|"
-    r"would you like me to|feel free to ask|is there more)",
+    r"hope (?:this|that) helps[.!]?|"
+    r"let me know if you (?:need anything else|have any questions)[.!]?",
     re.I,
 )
 
 
 def is_notebooklm_boilerplate(text: str, where: str) -> bool:
-    """Return True if ``text`` is NotebookLM intro/outro boilerplate.
-
-    Only short turns (<=70 words) without headings, tables, math, or
-    fenced blocks qualify, so real study content is never stripped.
-    """
-    words = len(text.split())
-    if not words or words > 70:
-        return False
-    stripped = text.strip()
-    if re.match(r"^#{1,6}\s+", stripped):
-        return False
-    if "|" in stripped and "---" in stripped:
-        return False
-    if "$" in stripped or "\\(" in stripped or "\\[" in stripped:
-        return False
-    if "```" in stripped:
-        return False
-    if where == "start":
-        return bool(_NLM_INTRO_RE.search(stripped))
-    return bool(_NLM_OUTRO_RE.search(stripped))
-
+    """Match an entire generic greeting or closing reply."""
+    pattern = _NLM_INTRO_RE if where == "start" else _NLM_OUTRO_RE
+    return bool(pattern.fullmatch(text.strip()))
 
 
 _FENCE_BLOCK_RE = re.compile(r"(?ms)^(`{3,}|~{3,})[^\n]*\n.*?^\1[ \t]*$")

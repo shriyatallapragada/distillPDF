@@ -194,13 +194,14 @@ def test_extended_answer_restores_dropped_vectors_and_examples(tmp_path: Path):
     out = (tmp_path / "clean.md").read_text(encoding="utf-8")
     manifest = json.loads(meta_path.read_text(encoding="utf-8"))
     originals = " ".join(manifest["placeholders"].values())
-    assert out.startswith("<!-- nlmdf:answer index=11 ordinal=1 -->\n# " + EXTENDED_MARKER)
+    assert out.startswith("<!-- nlmdf:answer index=11 ordinal=1 -->\n## " + EXTENDED_MARKER)
     assert "Ket Vector" in out
     assert "Worked Dual Computation" in out
     assert r"\begin{bmatrix}" in originals
     assert r"\langle\alpha|\beta\rangle" in originals
     assert "Next Steps" in out
-    assert "∣ψ⟩ = α∣0⟩" not in out
+    assert "∣ψ⟩ = α∣0⟩" in out
+    assert "maximum local entropy and zero independent information" in out
 
 
 def test_intact_extended_answer_is_not_overwritten():
@@ -210,6 +211,23 @@ def test_intact_extended_answer_is_not_overwritten():
         + "keep this exact wording"
     )
     assert restore_extended_answer(intact) == intact
+
+
+def test_greeting_and_closing_phrases_keep_adjacent_study_content(tmp_path: Path):
+    replies = [
+        "Hi! How can I help you today?",
+        "Here are the notes on quantum circuits.",
+        "Individual qubits have maximum local entropy. Let me know if you need anything else.",
+    ]
+    chat_path = tmp_path / "chat.json"
+    chat_path.write_text(json.dumps({
+        "turns": [{"role": "assistant", "markdown": reply} for reply in replies],
+    }), encoding="utf-8")
+    manifest = clean(chat_path, tmp_path / "clean.md")
+    assert len(manifest["answers"]) == 2
+    text = (tmp_path / "clean.md").read_text(encoding="utf-8")
+    assert replies[0] not in text
+    assert replies[2] in text
 
 
 def test_user_turns_are_dropped_and_answers_ordered(small_chat: Path, tmp_path: Path):

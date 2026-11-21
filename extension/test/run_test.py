@@ -126,12 +126,12 @@ def main() -> None:
                 context = browser.contexts[0]
                 page = context.pages[0] if context.pages else context.new_page()
                 page.route(
-                    "https://notebooklm.google.com/**",
+                    "https://notebook.google.com/**",
                     lambda route: route.fulfill(
                         status=200, content_type="text/html", body=FIXTURE
                     ),
                 )
-                page.goto("https://notebooklm.google.com/test")
+                page.goto("https://notebook.google.com/notebook/test")
                 page.wait_for_selector(".nl-kebab-panel", timeout=20_000)
                 page.wait_for_function(
                     "() => /answers ready/.test(document.querySelector('[data-nlk-status]').textContent)",
@@ -165,16 +165,26 @@ def main() -> None:
                     == "false"
                 )
 
-                # Open the popup from an unrelated active tab first; it must
-                # still find the NotebookLM chat tab.
+                # Open from a GitHub tab whose title mentions NotebookLM.
+                # The title must not take precedence over the real chat origin.
                 other = context.new_page()
-                other.goto("about:blank")
+                other.route(
+                    "https://github.com/**",
+                    lambda route: route.fulfill(
+                        status=200, content_type="text/html",
+                        body="<title>DistillPDF — NotebookLM PDF exporter</title>",
+                    ),
+                )
+                other.goto("https://github.com/shriyatallapragada/distillPDF")
                 other.bring_to_front()
                 popup = context.new_page()
                 popup.goto(f"chrome-extension://{loaded['id']}/popup.html")
+                other.bring_to_front()
+                popup.evaluate("() => refresh()")
                 popup.wait_for_selector(".pop-item", timeout=10_000)
                 assert popup.locator(".pop-item").count() == 4
-                print("popup: found the NotebookLM tab from an unrelated active tab")
+                assert popup.evaluate("() => lastTab.url").startswith("https://notebook.google.com/")
+                print("popup: selected NotebookLM from an unrelated GitHub tab")
 
                 def selected_payload():
                     result = popup.evaluate("() => send('NLK_EXPORT', undefined, lastTab)")
@@ -190,6 +200,7 @@ def main() -> None:
                 assert "| Symbol | Meaning |" in turn["markdown"]
                 assert "```python" in turn["markdown"]
                 assert "[1]" not in turn["markdown"]
+                assert "Internal thinking placeholder" not in turn["markdown"]
                 # Whitespace rules: tabs -> 4 columns, NBSP kept inside the
                 # diagram, trailing spaces kept, prose NBSP folded to a space.
                 assert "\n    │\u00a0\u00a0  \n" in turn["markdown"]
@@ -198,17 +209,17 @@ def main() -> None:
                 assert "Explain gradient descent" not in json.dumps(data)
                 print("export: one selected answer, exact LaTeX, table, code and whitespace")
 
-                # Selecting everything still drops the greeting and the closing
-                # reply, leaving only the two real answers.
+                # The payload keeps every selected reply. The Python cleaner
+                # drops only whole replies that match known boilerplate.
                 popup.evaluate("() => send('NLK_TOGGLE', true, lastTab)")
                 all_data = selected_payload()
                 texts = [item["markdown"] for item in all_data["turns"]]
-                assert len(texts) == 2, texts
+                assert len(texts) == 4, texts
                 assert any("Gradient descent" in text for text in texts)
                 assert any("From chat to PDF" in text for text in texts)
-                assert not any("How can I help" in text for text in texts)
-                assert not any("Let me know" in text for text in texts)
-                print("trim: greeting and closing replies removed from export")
+                assert any("How can I help" in text for text in texts)
+                assert any("Let me know" in text for text in texts)
+                print("export: all selected replies kept in the payload")
 
                 # Clicking Build PDF + HTML must reach the native-helper bridge.
                 # No host is registered in this test profile, so the expected
@@ -222,6 +233,14 @@ def main() -> None:
                 status = page.locator("[data-nlk-status]").inner_text()
                 assert "Local helper" in status or "Helper unavailable" in status, status
                 print("build: button reaches the local native-helper bridge")
+
+                page.close()
+                other.bring_to_front()
+                popup.reload()
+                popup.get_by_role("button", name="Open NotebookLM").wait_for(timeout=10_000)
+                assert popup.locator("#status").inner_text() == "Open a NotebookLM chat first."
+                assert popup.locator("#picker [data-tab-id]").count() == 0
+                print("popup: no NotebookLM tab yields an open button and no GitHub target")
 
                 browser.close()
         finally:

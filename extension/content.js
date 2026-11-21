@@ -1,8 +1,14 @@
 /* Stage 1 — in-page answer picker for NotebookLM. Local only. */
 (function () {
+  // Manifest loading and popup recovery can run this script in the same tab.
+  if (window.__NLMDF_CONTENT_INITIALIZED) return;
+  window.__NLMDF_CONTENT_INITIALIZED = true;
+
   const state = {
     turns: [],
     selected: new Set(),
+    fallbackKeys: new Map(),
+    nextFallbackKey: 0,
     instructions: '',
     status: 'Warming the kettle…',
     scanning: false,
@@ -68,8 +74,9 @@
 
   function roleOf(element) {
     const config = selectors();
-    if (matchesAny(config.user, element)) return 'user';
+    // Notebook's "to-user" cards are replies sent to the user.
     if (matchesAny(config.assistant, element)) return 'assistant';
+    if (matchesAny(config.user, element)) return 'user';
     const attribute = (element.getAttribute('data-message-author-role') ||
       element.getAttribute('data-role') || '').toLowerCase();
     if (/user|human/.test(attribute)) return 'user';
@@ -93,6 +100,7 @@
     });
 
     const found = [];
+    const occurrences = new Map();
     candidates.forEach(function (element) {
       if (roleOf(element) !== 'assistant') return;
       const body = first(config.content, element) || element;
@@ -100,9 +108,19 @@
         stripCitations: true,
         citation: config.citation || []
       });
-      if (!converted.markdown) return;
-      const key = element.getAttribute('data-message-id') ||
-        ('a-' + hash(converted.markdown.slice(0, 400)));
+      if (!converted.markdown || /^loading(?:\.{3}|…)?$/i.test(converted.markdown.trim())) return;
+      const id = element.getAttribute('data-message-id');
+      let key;
+      if (id) {
+        key = 'message-' + id;
+      } else {
+        const position = occurrences.get(converted.markdown) || 0;
+        occurrences.set(converted.markdown, position + 1);
+        if (!state.fallbackKeys.has(converted.markdown)) state.fallbackKeys.set(converted.markdown, []);
+        const keys = state.fallbackKeys.get(converted.markdown);
+        if (!keys[position]) keys[position] = 'answer-' + (++state.nextFallbackKey);
+        key = keys[position];
+      }
       found.push({
         key: key,
         role: 'assistant',
@@ -119,7 +137,7 @@
     const existing = new Map(state.turns.map(function (turn) { return [turn.key, turn]; }));
     found.forEach(function (turn, position) {
       if (existing.has(turn.key)) {
-        existing.get(turn.key).element = turn.element;
+        Object.assign(existing.get(turn.key), turn);
       } else {
         turn.order = state.turns.length + position;
         existing.set(turn.key, turn);
@@ -171,38 +189,50 @@
   }
 
   async function scanChat() {
-    // Allow re-scanning even if a previous scan was interrupted: reset the
-    // flag so the page can be re-scanned after the panel is reopened.
-    state.scanning = false;
+    if (state.scanning) return state.turns.length;
     state.scanning = true;
-    const scroller = container();
     try {
+      let scroller = container();
+      for (let attempt = 0; scroller === document.body && attempt < 40; attempt++) {
+        await wait(250);
+        scroller = container();
+      }
       scroller.scrollTop = 0;
-    } catch (error) { /* body may not be scrollable */ }
-    await wait(250);
+      await wait(250);
+      // Gemini Notebook mounts the scrolling pane before its history arrives.
+      if (scroller.matches('chat-panel .chat-panel-content')) {
+        for (let attempt = 0; attempt < 20; attempt++) {
+          const initial = collect();
+          if (initial.length) {
+            merge(initial);
+            break;
+          }
+          await wait(250);
+        }
+      }
+      let reachedEnd = false;
+      for (let pass = 0; pass < 80; pass++) {
+        merge(collect());
+        renderPanel();
+        status('Scouting the menu… ' + state.turns.length + ' answers found');
 
-    let lastCount = -1;
-    let stable = 0;
-    for (let pass = 0; pass < 80; pass++) {
+        const before = scroller.scrollTop;
+        const step = Math.max(220, Math.round(scroller.clientHeight * 0.8));
+        scroller.scrollTop = before + step;
+        await wait(220);
+        if (scroller.scrollTop === before) {
+          reachedEnd = true;
+          break;
+        }
+      }
       merge(collect());
       renderPanel();
-      if (state.turns.length === lastCount) stable++; else stable = 0;
-      lastCount = state.turns.length;
-      status('Scouting the menu… ' + lastCount + ' answers found');
-
-      const before = scroller.scrollTop;
-      const step = Math.max(220, Math.round(scroller.clientHeight * 0.8));
-      try { scroller.scrollTop = before + step; } catch (error) { /* ignore */ }
-      await wait(220);
-      const atEnd = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4;
-      if (stable >= 4 || atEnd || scroller.scrollTop === before) break;
+      status(state.turns.length + ' answers ready — ' +
+        (reachedEnd ? 'pick the ones you want.' : 'scan limit reached. Check for missing answers.'));
+      return state.turns.length;
+    } finally {
+      state.scanning = false;
     }
-    merge(collect());
-    renderPanel();
-    console.log('[DistillPDF] turns found:', state.turns.length);
-    status(lastCount + ' answers ready — pick the ones you want.');
-    state.scanning = false;
-    return state.turns.length;
   }
 
   function toggleAll(select) {
@@ -248,40 +278,8 @@
     return key;
   }
 
-  /* NotebookLM opens chats with a greeting and often closes with a "let me
-     know" reply. Neither is study material. Drop only short, clearly
-     boilerplate turns at the two ends, never a real answer in the middle. */
-  function isBoilerplate(text, where) {
-    const words = wordCount(text);
-    if (!words || words > 70) return false;
-    const trimmed = text.trim();
-    // Never strip turns that contain real study content.
-    if (/^#{1,6}\s/.test(trimmed)) return false;          // heading
-    if (/\|/.test(trimmed) && /---/.test(trimmed)) return false; // table
-    if (trimmed.includes("$") || trimmed.includes("\\(") || trimmed.includes("\\[")) return false; // math
-    if (/```/.test(trimmed)) return false;                // fenced block
-    if (where === 'start') {
-      return /^\s*(hi|hello|hey|greetings|welcome|ok(ay)?|sure)\b/i.test(text) &&
-        /(how can i help|how may i assist|what (would|can|do) you like|what (shall|should) we|get started|ready to help)/i.test(text);
-    }
-    return /(anything else|let me know|hope (this|that) helps|happy to help|would you like me to|feel free to ask|is there more)/i.test(text);
-  }
-
-  function chosenTurns() {
-    let chosen = state.turns.filter(function (turn) { return state.selected.has(turn.key); });
-    if (chosen.length > 1) {
-      while (chosen.length > 1 && isBoilerplate(chosen[0].markdown, 'start')) {
-        chosen = chosen.slice(1);
-      }
-      while (chosen.length > 1 && isBoilerplate(chosen[chosen.length - 1].markdown, 'end')) {
-        chosen = chosen.slice(0, -1);
-      }
-    }
-    return chosen;
-  }
-
   function payload() {
-    const chosen = chosenTurns();
+    const chosen = state.turns.filter(function (turn) { return state.selected.has(turn.key); });
     return {
       title: (document.title || 'NotebookLM chat').split(/\s+[-–]\s+/)[0].trim(),
       source: location.href,
@@ -304,6 +302,8 @@
      browser's Downloads folder. The helper runs the same Python pipeline as
      the command line, so the output is identical. */
   function buildDocuments() {
+    merge(collect());
+    renderPanel();
     const data = payload();
     if (!data.turns.length) {
       status('Pick at least one answer before brewing.');
@@ -322,7 +322,8 @@
       }
       if (response && response.ok) {
         status('Saved ' + fileName(response.pdf) + ' and ' + fileName(response.html) +
-          ' to Downloads (' + response.answers + ' answers).');
+          ' (' + response.answers + ' answers).' +
+          (response.passed ? '' : ' Export checks flagged a possible rendering issue.'));
       } else {
         status('Build failed: ' + ((response && response.error) || 'unknown error'));
       }
@@ -443,12 +444,6 @@
   });
 
   window.addEventListener('beforeunload', clearMarks);
-
-  // Guard against double injection: content.js is loaded both by the manifest
-  // content_scripts declaration and by popup.js via chrome.scripting.executeScript.
-  // Running it twice creates duplicate panels and message listeners.
-  if (window.__NLMDF_CONTENT_INITIALIZED) return;
-  window.__NLMDF_CONTENT_INITIALIZED = true;
 
   (async function start() {
     await waitForSelectors();

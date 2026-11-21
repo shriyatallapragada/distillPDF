@@ -70,7 +70,7 @@ def test_word_loss_triggers_fallback(cleaned, tmp_path, config, monkeypatch):
     _stub_model(monkeypatch, thin_output)
     report = _run(tmp_path, config)
     assert len(report["fallbacks"]) == 2
-    assert "word count" in report["fallbacks"][0]["reason"]
+    assert "original answer was changed" in report["fallbacks"][0]["reason"]
     text = (tmp_path / "enhanced.md").read_text(encoding="utf-8")
     assert "one two three" not in text
     assert "\\alpha \\le 1" in text
@@ -82,12 +82,22 @@ def test_mangled_placeholder_triggers_fallback(cleaned, tmp_path, config, monkey
 
     _stub_model(monkeypatch, mangled)
     report = _run(tmp_path, config)
-    assert report["fallbacks"][0]["reason"] == "protected placeholders changed or missing"
+    assert report["fallbacks"][0]["reason"] == "original answer was changed or extra prose was added"
+
+
+def test_same_length_prose_rewrite_is_rejected(cleaned, tmp_path, config, monkeypatch):
+    original = _original_first_answer(tmp_path)
+    word = re.search(r"(?m)^[A-Za-z]+", original).group()
+    _stub_model(monkeypatch, lambda prompt, answer: answer.replace(word, "Altered", 1))
+
+    report = _run(tmp_path, config)
+    assert "original answer was changed" in report["fallbacks"][0]["reason"]
+    assert "Altered" not in (tmp_path / "enhanced.md").read_text(encoding="utf-8")
 
 
 def test_invalid_mermaid_triggers_fallback(cleaned, tmp_path, config, monkeypatch):
     def with_diagram(prompt: str, answer: str) -> str:
-        return answer + "\n```mermaid\nflowchart TD\n A --> B\n```\n"
+        return answer.rstrip() + "\n\n```mermaid\nflowchart TD\n A --> B\n```\n"
 
     monkeypatch.setattr(stage, "_call_ollama", lambda p, c: with_diagram(p, p.split("ANSWER:\n", 1)[1]))
     monkeypatch.setattr(stage, "check_ollama", lambda cfg: (True, "stub", []))

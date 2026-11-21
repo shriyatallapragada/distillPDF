@@ -1,8 +1,7 @@
 """Stage 3 -- model enhancement (one Ollama call per answer).
 
-Code does everything it can; the model only adds a heading and Mermaid
-diagrams. Guardrails discard any output that drops words, mangles a protected
-placeholder or produces an unparseable Mermaid block.
+The model can add a heading and Mermaid diagrams. The original answer must
+appear unchanged between those additions.
 
     python -m pipeline.enhance sample/out/clean.md sample/out/enhanced.md \\
         --meta sample/out/clean.meta.json --config config.yaml
@@ -20,16 +19,16 @@ import httpx
 
 from .common import (
     load_config,
-    placeholder_keys,
     read_json,
     restore_placeholders,
     split_answers,
     word_count,
     write_json,
 )
-from .mermaid_validate import extract_mermaid_sources, validate_mermaid_blocks
+from .mermaid_validate import FENCED_MERMAID_RE, extract_mermaid_sources, validate_mermaid_blocks
 
 _WRAPPER_FENCE_RE = re.compile(r"(?s)^\s*```(?:markdown|md)?\s*\n(.*)\n```\s*$")
+_ADDED_HEADING_RE = re.compile(r"^## [^\n]+\n\n")
 
 SYSTEM_PROMPT = """You prepare NotebookLM answers for a study PDF. Structural edits ONLY.
 
@@ -53,7 +52,7 @@ def _build_prompt(text: str, instructions: str, no_think: bool) -> str:
     request = instructions.strip() or "Use a clear topic heading; keep the default structure."
     return (
         f"{SYSTEM_PROMPT}{suffix}\n\n"
-        f"USER REQUEST (may change headings, order and emphasis, never words):\n{request}\n\n"
+        f"USER REQUEST (may guide the added heading and diagrams):\n{request}\n\n"
         f"ANSWER:\n{text}"
     )
 
@@ -131,6 +130,21 @@ def _ensure_heading(text: str, ordinal: int) -> str:
     return "\n".join(lines)
 
 
+def _model_additions(candidate: str, original: str) -> str | None:
+    """Return appended diagrams only when the source and its order are intact."""
+    body = candidate
+    if not body.startswith(original):
+        body = _ADDED_HEADING_RE.sub("", body, count=1)
+    if not body.startswith(original):
+        return None
+    suffix = body[len(original):]
+    if not suffix:
+        return ""
+    if not suffix.startswith("\n\n") or FENCED_MERMAID_RE.sub("", suffix).strip():
+        return None
+    return suffix
+
+
 def enhance(
     clean_path: str | Path,
     enhanced_path: str | Path,
@@ -173,7 +187,6 @@ def enhance(
             str(manifest.get("user_instructions", ""))
             or str(meta_cfg.get("user_instructions", ""))
         )
-    max_loss = float(cfg.get("max_word_loss", 0.05))
     channel = (cfg.get("render", {}) or {}).get("chrome_channel", "chrome")
 
     output_sections: list[str] = []
@@ -182,12 +195,7 @@ def enhance(
 
     for answer in answers:
         ordinal = int(answer["ordinal"])
-        # Keep the answer verbatim, including a leading blank line that may be
-        # part of a diagram. Only the word-count baseline ignores outer blank
-        # space; the emitted text never gets trimmed.
         original = answer["text"]
-        expected_tokens = sorted(placeholder_keys(original))
-        baseline = word_count(original.strip())
         candidate: str | None = None
         reason = ""
 
@@ -209,14 +217,9 @@ def enhance(
                 candidate = None
 
         if candidate is not None:
-            if sorted(placeholder_keys(candidate)) != expected_tokens:
-                reason = "protected placeholders changed or missing"
-                candidate = None
-            elif word_count(candidate) < baseline * (1 - max_loss):
-                reason = (
-                    f"word count {word_count(candidate)} < {baseline * (1 - max_loss):.1f} "
-                    f"({max_loss:.0%} limit)"
-                )
+            additions = _model_additions(candidate, original.rstrip())
+            if additions is None:
+                reason = "original answer was changed or extra prose was added"
                 candidate = None
             else:
                 blocks = extract_mermaid_sources(candidate)
@@ -233,7 +236,7 @@ def enhance(
                 {
                     "ordinal": ordinal,
                     "reason": reason or "no candidate",
-                    "word_count": baseline,
+                    "word_count": word_count(original),
                 }
             )
         else:

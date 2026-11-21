@@ -4,7 +4,6 @@
 # --- Stage 3: enhance (Ollama) -------------------------------------------------
 model: qwen3:8b          # alternatives: llama3.1:8b
 ollama_url: http://localhost:11434
-max_word_loss: 0.05      # discard model output shorter than input by >5%
 strip_citations: true    # deterministic, runs in Stage 2
 page_size: A4
 

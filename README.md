@@ -122,8 +122,8 @@ picker tells you where they went. Reload the extension once after running the
 installer so it picks up the native host registration.
 
 Answers start **unchecked**. Tick only the ones you want, or use **Select all**.
-Short greeting/closing replies ("How can I help?", "Let me know if…") are
-dropped automatically, so only study material reaches the PDF.
+Recognized standalone greetings and sign-offs are removed during cleanup.
+Replies that also contain study text are kept.
 
 ### Phones and tablets
 
@@ -221,11 +221,9 @@ the originals and expected formula/table/diagram counts.
 
 **Stage 3 — enhance (one Ollama call per answer).** Ollama is **optional** and
 does only two things: suggest a short topic heading and, when prose describes a
-process, add a Mermaid flowchart. It never rewrites your sentences — the prompt
-forbids it, and output is accepted only if every protected token appears exactly
-once unchanged, word loss stays within `max_word_loss` (default 5%), and every
-Mermaid block parses with the bundled Mermaid build. Anything else falls back
-to the original answer with a plain numbered heading; `enhance.meta.json`
+process, append a Mermaid flowchart. The original answer must be copied in full
+and in order, and each Mermaid block must parse with the bundled Mermaid build.
+Otherwise the original answer gets a plain numbered heading. `enhance.meta.json`
 records each fallback and why. `--offline` bypasses the model entirely, and an
 unreachable or missing model is detected up front and treated the same way.
 
