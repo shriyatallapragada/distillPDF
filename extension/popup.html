@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DistillPDF</title>
+  <link rel="stylesheet" href="palette.css">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="pop-head">
+    <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M6 10h16v8a6 6 0 0 1-6 6h-4a6 6 0 0 1-6-6z"/>
+      <path d="M22 12h2a3 3 0 0 1 0 6h-2"/>
+      <path d="M10 5c0 2 2 2 2 4M15 5c0 2 2 2 2 4"/>
+    </svg>
+    <div>
+      <strong>DistillPDF</strong>
+      <small>NotebookLM → PDF + HTML</small>
+    </div>
+  </div>
+
+  <p class="pop-status" id="status">Opening the menu…</p>
+  <div class="pop-picker" id="picker" hidden></div>
+  <div class="pop-list" id="list"></div>
+
+  <button class="pop-btn primary" id="build">Build PDF + HTML</button>
+  <button class="pop-btn quiet" id="options">Settings</button>
+
+  <script src="popup.js"></script>
+</body>
+</html>

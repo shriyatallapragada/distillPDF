@@ -1,0 +1,118 @@
+/* Everything below is scoped to the injected picker so the chat page keeps
+   its own look. Only the five palette variables may appear here. */
+.nl-kebab-panel {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 2147483647;
+  display: flex;
+  flex-direction: column;
+  width: 338px;
+  max-height: calc(100vh - 32px);
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: 14px;
+  border: 2px solid var(--nlk-kyoto);
+  border-radius: 16px;
+  background: var(--nlk-vanilla);
+  color: var(--nlk-charcoal);
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.nl-kebab-panel * { box-sizing: border-box; }
+
+.nl-kebab-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 10px;
+}
+
+.nl-kebab-head svg { width: 28px; height: 28px; flex: none; color: var(--nlk-terracotta); }
+.nl-kebab-head strong { display: block; font-size: 15px; letter-spacing: 0.01em; }
+.nl-kebab-head small { display: block; color: var(--nlk-kyoto); }
+
+.nl-kebab-row { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 9px; }
+
+.nl-kebab-btn {
+  flex: 1 1 auto;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 2px solid var(--nlk-kyoto);
+  border-radius: 9px;
+  background: var(--nlk-matcha);
+  color: var(--nlk-charcoal);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.nl-kebab-btn:hover { background: var(--nlk-kyoto); color: var(--nlk-vanilla); }
+.nl-kebab-btn:focus-visible { outline: 2px solid var(--nlk-terracotta); outline-offset: 2px; }
+
+.nl-kebab-btn.primary { background: var(--nlk-terracotta); color: var(--nlk-vanilla); }
+.nl-kebab-btn.primary:hover { background: var(--nlk-kyoto); }
+.nl-kebab-btn.quiet { background: var(--nlk-vanilla); }
+
+.nl-kebab-status {
+  margin: 0 0 9px;
+  padding: 7px 9px;
+  border: 1px solid var(--nlk-matcha);
+  border-radius: 8px;
+  background: var(--nlk-vanilla);
+  color: var(--nlk-kyoto);
+  min-height: 30px;
+}
+
+.nl-kebab-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 60px;
+  max-height: 46vh;
+  margin: 0 0 9px;
+  padding: 3px;
+  border: 1px solid var(--nlk-matcha);
+  border-radius: 9px;
+}
+
+.nl-kebab-item {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 8px 7px;
+  border-bottom: 1px solid var(--nlk-matcha);
+  cursor: pointer;
+}
+.nl-kebab-item:last-child { border-bottom: 0; }
+.nl-kebab-item:hover { background: var(--nlk-matcha); }
+.nl-kebab-item input { accent-color: var(--nlk-terracotta); margin-top: 2px; flex: none; }
+.nl-kebab-item span { display: block; }
+.nl-kebab-item .nlk-title { font-weight: 600; }
+.nl-kebab-item .nlk-preview {
+  color: var(--nlk-kyoto);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 268px;
+}
+.nl-kebab-empty { padding: 12px; color: var(--nlk-kyoto); }
+
+.nl-kebab-link {
+  display: block;
+  width: 100%;
+  margin-top: 5px;
+  padding: 4px;
+  border: 0;
+  background: var(--nlk-vanilla);
+  color: var(--nlk-kyoto);
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.nl-kebab-link:hover { color: var(--nlk-terracotta); }
+
+.nl-kebab-turn[data-nlk-selected="true"] {
+  outline: 2px solid var(--nlk-terracotta);
+  outline-offset: 2px;
+  border-radius: 6px;
+}

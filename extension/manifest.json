@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "DistillPDF — NotebookLM PDF exporter",
+  "short_name": "DistillPDF",
+  "version": "0.2.0",
+  "description": "Pick NotebookLM answers and build study-notes.pdf and study-notes.html locally. Zero network calls.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA5vLbzDi9Bkzes+wD+UWZ4+ag6SA7z+ihg6Em/FsxEih1GfJ73riy7A3j1uONeEQ4xV+EjnsInJrZU9uve3EZY7o7UDRoZkuqKMVKKH8Huy5M5DEHuvThTrTXE//1X979s7+eOZcDMposttWp/CQvUVPDvQo16YEG3h77uGNnAgH2HtN5GUQekC693A5ywv/pTOpRtjOO/rRMTkLQGDdbdk6OpjoA+oll6BVbHzWSmYWST/yps4+RDJJ9WBM99iuWPu+JLJI0CLkTr7WwsUMh/UWjRplXv1itXMcSfwnIR7VTyDqmUGBQfTVn3ISXtUXDdtdbLMwh9VQQ9Y+KAXju4QIDAQAB",
+  "permissions": ["activeTab", "storage", "tabs", "scripting", "nativeMessaging"],
+  "host_permissions": ["https://notebooklm.google.com/*"],
+  "background": { "service_worker": "background.js" },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Pick answers and build PDF + HTML",
+    "default_icon": {
+      "16": "icons/cup16.png",
+      "32": "icons/cup32.png",
+      "48": "icons/cup48.png",
+      "128": "icons/cup128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/cup16.png",
+    "32": "icons/cup32.png",
+    "48": "icons/cup48.png",
+    "128": "icons/cup128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://notebooklm.google.com/*"],
+      "js": ["selectors.js", "converter.js", "content.js"],
+      "css": ["palette.css", "content.css"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["selectors.json"],
+      "matches": ["https://notebooklm.google.com/*"]
+    }
+  ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": false
+  }
+}

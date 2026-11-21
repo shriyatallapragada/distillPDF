@@ -1,0 +1,39 @@
+{
+  "title": "Sample NotebookLM chat: optimization and offline export",
+  "source": "https://notebooklm.google.com/notebook/sample",
+  "exported_at": "2026-11-21T12:00:00Z",
+  "user_instructions": "Group related points together and keep key formulas prominent.",
+  "turns": [
+    {
+      "role": "user",
+      "markdown": "Explain the gradient descent update and the symbols involved.",
+      "index": 1
+    },
+    {
+      "role": "assistant",
+      "markdown": "## Optimization\n\nGradient descent updates parameters with the rule\n\n$$ \\theta_{t+1} = \\theta_t - \\eta \\nabla_\\theta \\mathcal{L}(\\theta_t) $$\n\nwhere $\\eta > 0$ is the learning rate and $\\nabla_\\theta \\mathcal{L}$ is the gradient. For a convex function the loss decreases monotonically when $\\eta \\le 1/L$ [1].\n\n| Symbol | Meaning |\n| --- | --- |\n| $\\theta$ | parameters |\n| $\\eta$ | learning rate |\n| $L$ | smoothness constant |\n\nThe convergence bound is $\\mathcal{L}(\\theta_T) - \\mathcal{L}(\\theta^*) \\le \\frac{\\|\\theta_0 - \\theta^*\\|^2}{2\\eta T}$.",
+      "latex": [
+        "\\theta_{t+1} = \\theta_t - \\eta \\nabla_\\theta \\mathcal{L}(\\theta_t)",
+        "\\eta > 0"
+      ],
+      "index": 2
+    },
+    {
+      "role": "user",
+      "markdown": "How does the exporter turn this chat into a PDF?",
+      "index": 3
+    },
+    {
+      "role": "assistant",
+      "markdown": "## From chat to PDF\n\nThe exporter follows four steps:\n\n1. The Chrome extension reads the chat and writes `chat.json`.\n2. Stage 2 normalizes text and protects LaTeX with placeholders → clean.md [2].\n3. Stage 3 asks Ollama for a heading and Mermaid diagrams → enhanced.md.\n4. Stage 4 prints study-notes.pdf with headless Chromium.\n\nThe same structure is a flowchart:\n\n```mermaid\nflowchart TD\n    A[Capture chat.json] --> B[Clean to clean.md]\n    B --> C[Enhance with Ollama]\n    C --> D[Render PDF and HTML]\n    D --> E{Validate report}\n    E -- pass --> F[Done]\n    E -- fail --> G[Use HTML fallback]\n```\n\nEach stage reads one file and writes the next. On a 16 GB Mac mini an 8B model keeps memory headroom for the renderer (≤ 14B).",
+      "latex": [],
+      "index": 4
+    },
+    {
+      "role": "assistant",
+      "markdown": "## Verification rules\n\nValidation checks six things:\n\n- **Math** — zero `.katex-error` elements\n- **Flowcharts** — every block parses before rendering\n- **Tables** — counts match the Markdown source\n- **Missing text** — PDF word count within 2% of `enhanced.md`\n- **Symbols** — every non-ASCII character survives (no replacement character)\n- **Visual** — skim the contact sheet\n\nIf any automatic check fails, the PDF is marked as failed and the self-contained HTML is offered instead. Nothing leaves the machine: α, β, Σ, → and ≤ are handled locally.",
+      "latex": [],
+      "index": 5
+    }
+  ]
+}

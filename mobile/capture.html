@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DistillPDF — mobile capture</title>
+  <style>
+    :root {
+      --kyoto: #5B5F8D;
+      --matcha: #9BB29E;
+      --terracotta: #DA6B51;
+      --vanilla: #F1DCBA;
+      --charcoal: #484149;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 16px;
+      background: var(--vanilla);
+      color: var(--charcoal);
+      font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+    h1 { margin: 0; font-size: 21px; color: var(--kyoto); }
+    header span { font-size: 13px; }
+    p.lead { margin: 0 0 16px; font-size: 14px; color: var(--kyoto); }
+    label { display: block; margin: 12px 0 4px; font-weight: 600; font-size: 14px; }
+    input, textarea {
+      width: 100%;
+      padding: 10px;
+      border: 2px solid var(--kyoto);
+      border-radius: 8px;
+      background: var(--vanilla);
+      color: var(--charcoal);
+      font: inherit;
+    }
+    textarea { resize: vertical; min-height: 120px; }
+    .answer { margin: 12px 0; padding: 10px; border: 2px solid var(--matcha); border-radius: 10px; }
+    .answer-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .answer-head span { font-weight: 600; font-size: 14px; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+    button {
+      flex: 1 1 auto;
+      min-height: 44px;
+      padding: 10px 14px;
+      border: 2px solid var(--kyoto);
+      border-radius: 9px;
+      background: var(--matcha);
+      color: var(--charcoal);
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button.primary { background: var(--terracotta); color: var(--vanilla); }
+    button.small { flex: 0 0 auto; min-height: 30px; padding: 4px 10px; font-size: 13px; }
+    #status { min-height: 24px; margin: 10px 0; font-size: 14px; color: var(--kyoto); }
+    details { margin-top: 14px; border-top: 2px solid var(--matcha); padding-top: 10px; }
+    summary { cursor: pointer; font-weight: 600; }
+    #json { min-height: 100px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header><h1>DistillPDF</h1><span>mobile capture</span></header>
+  <p class="lead">Paste each NotebookLM answer below, then download <code>chat.json</code>. Your work stays on this device.</p>
+
+  <label for="title">Notebook title</label>
+  <input id="title" placeholder="e.g. Quantum notes">
+
+  <label for="instructions">Notes for the enhancer (optional)</label>
+  <textarea id="instructions" rows="2" placeholder="e.g. group by topic"></textarea>
+
+  <div id="answers"></div>
+
+  <div class="row">
+    <button id="add" type="button">Add another answer</button>
+    <button id="clear" type="button">Clear all</button>
+  </div>
+  <div class="row">
+    <button id="download" class="primary" type="button">Download chat.json</button>
+  </div>
+  <p id="status" role="status"></p>
+
+  <details>
+    <summary>Can't download? Copy the JSON instead</summary>
+    <label for="json">chat.json</label>
+    <textarea id="json" readonly></textarea>
+    <div class="row"><button id="copy" type="button">Copy JSON</button></div>
+  </details>
+
+  <script>
+    (function () {
+      var KEY = 'distillpdf-mobile-capture-v1';
+      var state = { title: '', instructions: '', answers: [''] };
+      try {
+        var saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+        if (saved && Array.isArray(saved.answers)) state = saved;
+      } catch (error) { /* keep defaults */ }
+      if (!state.answers.length) state.answers = [''];
+
+      var answersEl = document.getElementById('answers');
+      var titleEl = document.getElementById('title');
+      var instructionsEl = document.getElementById('instructions');
+      var statusEl = document.getElementById('status');
+      var jsonEl = document.getElementById('json');
+
+      function note(text) { statusEl.textContent = text; }
+      function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (error) {} }
+
+      function payload() {
+        return {
+          title: state.title.trim() || 'NotebookLM notes',
+          source: 'mobile-capture',
+          user_instructions: state.instructions.trim(),
+          // Raw answer text is kept verbatim: only CRLF is normalized, so
+          // diagram indentation and trailing spaces reach the pipeline intact.
+          turns: state.answers
+            .map(function (text) { return text.replace(/\r\n/g, '\n'); })
+            .filter(function (text) { return text.trim().length > 0; })
+            .map(function (text, index) {
+              return { role: 'assistant', markdown: text, latex: [], index: index };
+            })
+        };
+      }
+
+      function renderAnswers() {
+        answersEl.innerHTML = '';
+        state.answers.forEach(function (value, index) {
+          var box = document.createElement('div');
+          box.className = 'answer';
+          var head = document.createElement('div');
+          head.className = 'answer-head';
+          var label = document.createElement('span');
+          label.textContent = 'Answer ' + (index + 1);
+          head.appendChild(label);
+          if (state.answers.length > 1) {
+            var remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'small';
+            remove.textContent = 'Remove';
+            remove.addEventListener('click', function () {
+              state.answers.splice(index, 1);
+              save();
+              renderAnswers();
+            });
+            head.appendChild(remove);
+          }
+          var area = document.createElement('textarea');
+          area.value = value;
+          area.placeholder = 'Paste the answer text here (Markdown is fine)';
+          area.addEventListener('input', function () {
+            state.answers[index] = area.value;
+            save();
+          });
+          box.appendChild(head);
+          box.appendChild(area);
+          answersEl.appendChild(box);
+        });
+        jsonEl.value = JSON.stringify(payload(), null, 2) + '\n';
+      }
+
+      titleEl.value = state.title;
+      instructionsEl.value = state.instructions;
+      titleEl.addEventListener('input', function () { state.title = titleEl.value; save(); });
+      instructionsEl.addEventListener('input', function () {
+        state.instructions = instructionsEl.value;
+        save();
+      });
+
+      document.getElementById('add').addEventListener('click', function () {
+        state.answers.push('');
+        save();
+        renderAnswers();
+        answersEl.lastChild.querySelector('textarea').focus();
+      });
+
+      document.getElementById('clear').addEventListener('click', function () {
+        state = { title: '', instructions: '', answers: [''] };
+        titleEl.value = '';
+        instructionsEl.value = '';
+        save();
+        renderAnswers();
+        note('Cleared.');
+      });
+
+      document.getElementById('download').addEventListener('click', function () {
+        var data = payload();
+        if (!data.turns.length) {
+          note('Paste at least one answer first.');
+          return;
+        }
+        var blob = new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var link = document.createElement('a');
+        link.href = url;
+        link.download = 'chat.json';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+        note('Ready: ' + data.turns.length + ' answer(s), ' +
+          data.turns.reduce(function (sum, turn) {
+            return sum + (turn.markdown.match(/\S+/g) || []).length;
+          }, 0) + ' words.');
+      });
+
+      document.getElementById('copy').addEventListener('click', function () {
+        jsonEl.value = JSON.stringify(payload(), null, 2) + '\n';
+        jsonEl.select();
+        try {
+          document.execCommand('copy');
+          note('JSON copied. Save it as chat.json.');
+        } catch (error) {
+          note('Select the JSON above and copy it manually.');
+        }
+      });
+
+      renderAnswers();
+    })();
+  </script>
+</body>
+</html>

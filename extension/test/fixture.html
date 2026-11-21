@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>QC notes - NotebookLM</title>
+  <style>
+    body { margin: 0; font: 15px sans-serif; background: #F1DCBA; color: #484149; }
+    main { width: 720px; padding: 24px; }
+    [data-message-author-role] { margin: 0 0 22px; padding: 14px; border: 1px solid #5B5F8D; }
+  </style>
+</head>
+<body>
+  <main role="main">
+    <div data-message-author-role="assistant" data-message-id="a0">
+      <div class="message-content">Hi! How can I help you today?</div>
+    </div>
+
+    <div data-message-author-role="user" data-message-id="u0">Explain gradient descent and its convergence bound.</div>
+
+    <div data-message-author-role="assistant" data-message-id="a1">
+      <div class="message-content">
+        <h2>Gradient descent</h2>
+        <p>The update rule is
+          <span class="katex"><annotation encoding="application/x-tex">\theta_{t+1} = \theta_t - \eta \nabla_\theta L</annotation><span class="katex-html" aria-hidden="true">garbled render</span></span>.
+          Convergence needs <span class="katex katex-display"><annotation encoding="application/x-tex">\eta \le 1/L</annotation><span class="katex-html" aria-hidden="true">garbled</span></span>
+          <sup data-citation="1">1</sup>.
+        </p>
+        <table>
+          <tr><th>Symbol</th><th>Meaning</th></tr>
+          <tr><td>\eta</td><td>learning rate</td></tr>
+        </table>
+        <pre><code class="language-python">print("local only")</code></pre>
+        <p>Spacing&nbsp;in prose wraps.</p>
+        <pre><code class="text">Control 1 ──■─────
+	│&#160;&#160;  
+Target ──[T]───</code></pre>
+      </div>
+    </div>
+
+    <div data-message-author-role="assistant" data-message-id="a2">
+      <div class="message-content">
+        <h2>From chat to PDF</h2>
+        <p>The exporter has four steps and never sends your notes anywhere.</p>
+        <ul><li>Capture</li><li>Clean</li><li>Enhance</li></ul>
+      </div>
+    </div>
+
+    <div data-message-author-role="assistant" data-message-id="a9">
+      <div class="message-content">Let me know if you need anything else.</div>
+    </div>
+  </main>
+</body>
+</html>

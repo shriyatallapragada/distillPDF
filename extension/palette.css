@@ -1,0 +1,8 @@
+/* The only five colors used anywhere in this extension. */
+:root {
+  --nlk-kyoto: #5B5F8D;
+  --nlk-matcha: #9BB29E;
+  --nlk-terracotta: #DA6B51;
+  --nlk-vanilla: #F1DCBA;
+  --nlk-charcoal: #484149;
+}

@@ -1,0 +1,22 @@
+# NotebookLM Chat-to-PDF Exporter -- local configuration.
+# All paths are relative to the directory you run the CLI from.
+
+# --- Stage 3: enhance (Ollama) -------------------------------------------------
+model: qwen3:8b          # alternatives: llama3.1:8b
+ollama_url: http://localhost:11434
+max_word_loss: 0.05      # discard model output shorter than input by >5%
+strip_citations: true    # deterministic, runs in Stage 2
+page_size: A4
+
+# Optional overrides. Defaults shown; leave as-is unless you know why.
+enhance:
+  enabled: true          # false = deterministic headings, no model call (offline)
+  temperature: 0.1
+  timeout_seconds: 120
+  no_think: true         # add /no_think for Qwen 3
+  user_instructions: ""  # can also be set in chat.json; CLI flag wins
+
+render:
+  chrome_channel: chrome  # use the installed Google Chrome; set null to use bundled Chromium
+  margin_mm: 16
+  body_font: Inter

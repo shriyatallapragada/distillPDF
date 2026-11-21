@@ -1,0 +1,215 @@
+/* Print stylesheet for study-notes.html / study-notes.pdf. */
+
+:root {
+  --ink: #14181f;
+  --muted: #55606e;
+  --line: #d8dee7;
+  --accent: #2b5f8a;
+  --soft: #f4f7fa;
+}
+
+@page {
+  size: A4;
+  margin: 16mm;
+}
+
+* { box-sizing: border-box; }
+
+/* Whitespace is scoped by element type: prose reflows, code/diagrams keep
+   their columns. Line breaks are produced by the Markdown parser, never by a
+   separate replace(/\n/, '<br>') pass. */
+p, li, td, th { white-space: normal; }
+pre, pre code { white-space: pre-wrap; tab-size: 4; -moz-tab-size: 4; }
+
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+body {
+  margin: 0 auto;
+  max-width: 178mm;
+  padding: 14mm 0;
+  color: var(--ink);
+  font-family: Inter, "Helvetica Neue", Arial, sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.55;
+}
+
+#print-button {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 10;
+  padding: 9px 16px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+h1, h2, h3, h4 {
+  color: var(--ink);
+  line-height: 1.25;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+h1 { font-size: 20pt; margin: 0 0 18px; }
+h2 {
+  font-size: 15pt;
+  margin: 26px 0 10px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--line);
+}
+h3 { font-size: 12pt; margin: 20px 0 8px; }
+h4 { font-size: 11pt; margin: 16px 0 6px; }
+
+p, ul, ol, blockquote { margin: 0 0 10px; }
+ul, ol { padding-left: 1.4em; }
+li { margin: 3px 0; }
+
+a { color: var(--accent); text-decoration: none; }
+
+strong, b { font-weight: 700; }
+code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+
+code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--soft);
+  font-size: 0.88em;
+}
+
+pre {
+  overflow-x: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--soft);
+  font-size: 8.8pt;
+  line-height: 1.45;
+  /* Circuits and ASCII diagrams keep their alignment; JS scales any block
+     that is wider than the page instead of letting the browser re-wrap it.
+     tab-size: 4 is set above for both pre and pre code. */
+  white-space: pre-wrap;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+pre code {
+  display: inline-block;
+  padding: 0;
+  background: transparent;
+}
+
+/* Wide circuits/diagrams become a single scalable SVG: width 100% of the
+   print column, viewBox fitted to the longest source line. No reflow. */
+figure.nlmdf-diagram {
+  margin: 12px 0 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--soft);
+  overflow: hidden;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+figure.nlmdf-diagram.nlmdf-circuit {
+  background: #fff;
+  border-color: #b9c2cc;
+}
+
+figure.nlmdf-diagram > svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+figure.nlmdf-diagram svg text {
+  white-space: pre;
+}
+
+blockquote {
+  padding: 4px 14px;
+  border-left: 3px solid var(--accent);
+  color: var(--muted);
+}
+
+table {
+  width: 100%;
+  margin: 12px 0 16px;
+  border-collapse: collapse;
+  font-size: 9.5pt;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+thead { display: table-header-group; }
+th, td {
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+th { background: var(--soft); font-weight: 700; }
+
+hr {
+  margin: 22px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+/* Math: keep formulas intact across page breaks. */
+.math-source { color: var(--ink); }
+.math-source.display { display: block; }
+.nlmdf-symbol { color: var(--ink); }
+.nlmdf-symbol.display { display: block; }
+.nlmdf-symbol-svg {
+  display: inline-block;
+  vertical-align: -0.15em;
+  max-width: 100%;
+  overflow: visible;
+}
+.katex-display {
+  margin: 12px 0 !important;
+  overflow-x: auto;
+  overflow-y: hidden;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.katex-error {
+  padding: 2px 4px;
+  background: #ffe2e2;
+  color: #a11212;
+}
+
+/* Mermaid diagrams are replaced by a self-contained SVG. */
+.mermaid-figure {
+  margin: 14px 0 18px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  text-align: center;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.mermaid-figure svg { max-width: 100%; height: auto; }
+
+/* Small screens: the same HTML stays readable in a phone browser. */
+@media (max-width: 700px) {
+  body { padding: 12px 12px 28px; font-size: 15px; line-height: 1.5; }
+  #print-button { position: static; display: block; width: 100%; margin: 0 0 14px; }
+  table { font-size: 12px; }
+  th, td { padding: 4px 6px; }
+  figure.nlmdf-diagram { padding: 8px; overflow-x: auto; overflow-y: hidden; }
+  figure.nlmdf-diagram > svg { min-width: 520px; }
+  .katex-display { overflow-x: auto; }
+}
+
+@media print {
+  #print-button { display: none !important; }
+  body { max-width: none; padding: 0; font-size: 10.5pt; }
+  a { color: inherit; }
+}

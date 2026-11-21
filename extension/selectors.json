@@ -1,0 +1,42 @@
+{
+  "_comment": "Every NotebookLM DOM hook lives here. Edit in Options; no code changes needed when the layout moves.",
+  "scrollContainer": [
+    "main [role='log']",
+    "main .chat-scroll",
+    "[role='main']",
+    "main"
+  ],
+  "turn": [
+    "[data-message-author-role]",
+    "[data-role='user'], [data-role='assistant']",
+    "[class*='message-content']",
+    "[class*='model-response']"
+  ],
+  "user": [
+    "[data-message-author-role='user']",
+    "[data-role='user']",
+    "[class*='user-message']",
+    "[class*='user-query']"
+  ],
+  "assistant": [
+    "[data-message-author-role='assistant']",
+    "[data-role='assistant']",
+    "[class*='model-response']",
+    "[class*='assistant-message']",
+    "[class*='answer-content']"
+  ],
+  "content": [
+    "[data-message-content]",
+    "[class*='message-content']",
+    "[class*='answer-content']",
+    ".markdown"
+  ],
+  "math": [
+    "annotation[encoding='application/x-tex']"
+  ],
+  "citation": [
+    "sup[data-citation]",
+    "[class*='citation']",
+    "a[href^='#citation']"
+  ]
+}
