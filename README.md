@@ -173,11 +173,40 @@ Individual stages are independently runnable:
 .venv/bin/python -m pipeline.validate   out/study-notes.pdf
 ```
 
+To compare an existing export with your original chat Markdown, run:
+
+```bash
+.venv/bin/python -m pipeline.cli validate out/study-notes.pdf --source-md original-chat.md
+```
+
+This check works without starting Chrome. It checks PDF text and the matching
+HTML file when available, then reports unmatched source passages in
+`report.json`. Use `--html` if the HTML has a different name and `--report`
+to choose where to save the report. Normal desktop exports automatically
+compare with the captured Markdown and save a `*-validation.json` report.
+The comparison accounts for Markdown formatting, citation settings and line
+wrapping. PDF text extraction can report a mismatch when a visible glyph is
+encoded or read in a different order, so use the HTML comparison to help
+locate a discrepancy.
+
 Open `out/study-notes.pdf` for printing, or `out/study-notes.html` as the
 self-contained fallback (it also works on phones). On Windows use
 `.venv\Scripts\python.exe` and `.venv\Scripts\nlm-pdf.exe`.
 
 ## Input contract
+
+If browser capture flattens equations, open **Paste Markdown with LaTeX** in
+the DistillPDF sidebar and paste the original Markdown. The build button changes
+to **Build PDF + HTML from pasted Markdown**. The exported files start with
+`study-notes-from-markdown`. Clear the text box to export checked replies again.
+You can also save the original Markdown with its LaTeX delimiters and export
+it directly from the project folder:
+
+```bash
+.venv/bin/python -m pipeline.cli all born-rule.md --offline
+```
+
+The result is written to the `out` folder beside the input file by default.
 
 If you already have a plain Markdown answer, wrap it without editing the text:
 

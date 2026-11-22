@@ -14,6 +14,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from markdown_it import MarkdownIt
+
 from .common import (
     assistant_turns,
     count_math,
@@ -148,12 +150,14 @@ def clean(
     meta_file = Path(meta_path)
 
     sections: list[str] = []
+    source_answers: list[str] = []
     answers_meta: list[dict[str, Any]] = []
     placeholder_counts = {"MATH": 0, "CODE": 0, "CODEINLINE": 0}
     all_placeholders: dict[str, str] = {}
     expected_formulas = 0
     expected_tables = 0
     expected_mermaid = 0
+    list_item_shortfalls: list[dict[str, int]] = []
 
     total = len(turns)
     for ordinal, turn in enumerate(turns, start=1):
@@ -166,6 +170,7 @@ def clean(
             text = ""
         else:
             text = strip_leading_user_prompt(text)
+        source_text = text
         # Restore known answer fragments before math is protected/counted, so
         # validation expects the formulas that will actually be rendered.
         text = restore_extended_answer(text)
@@ -183,9 +188,19 @@ def clean(
             text = ""
 
         text = _append_missing_formulas(text, list(turn.get("latex") or []))
+        captured_items = turn.get("list_items")
+        if isinstance(captured_items, int) and captured_items > 0:
+            cleaned_items = sum(
+                token.type == "list_item_open" for token in MarkdownIt("commonmark").parse(text)
+            )
+            if cleaned_items < captured_items:
+                list_item_shortfalls.append(
+                    {"index": index, "expected": captured_items, "actual": cleaned_items}
+                )
         # A dropped prompt/boilerplate turn must not leave an empty section.
         if not text.strip():
             continue
+        source_answers.append(source_text)
 
         expected_formulas += count_math(text)
         expected_tables += len(_TABLE_RULE_RE.findall(text))
@@ -218,8 +233,10 @@ def clean(
         "user_instructions": str(chat.get("user_instructions", "")),
         "chat_path": str(Path(chat_path).resolve()),
         "strip_citations": bool(cfg.get("strip_citations", True)),
+        "source_markdown": "\n\n---\n\n".join(source_answers),
         "answers": answers_meta,
         "placeholders": all_placeholders,
+        "list_item_shortfalls": list_item_shortfalls,
         "expected": {
             "formulas": expected_formulas,
             "tables": expected_tables,

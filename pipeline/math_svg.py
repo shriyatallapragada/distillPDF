@@ -60,7 +60,11 @@ SYMBOL_MAP: dict[str, str] = {
     "mathbb{Q}": "ℚ", "mathbb{N}": "ℕ", "mathbb{H}": "ℍ",
     "hbar": "ℏ", "ell": "ℓ", "prime": "′", "angle": "∠",
     "perp": "⊥", "top": "⊤", "bot": "⊥",
+    "setminus": "∖", "neg": "¬", "land": "∧", "lor": "∨",
+    "to": "→", "longrightarrow": "⟶", "longleftarrow": "⟵",
+    "cdots": "⋯", "ldots": "…", "vdots": "⋮", "ddots": "⋱",
 }
+SYMBOL_CHARS.update(symbol for symbol in SYMBOL_MAP.values() if len(symbol) == 1 and not symbol.isascii())
 
 # Commands that take one braced argument and should be dropped or rewritten.
 _STYLE_COMMANDS = {
@@ -89,7 +93,9 @@ def _balanced_arg(source: str, start: int) -> tuple[str, int]:
     return source[start + 1 :], len(source)
 
 
-_LATEX_COMMAND_RE = re.compile(r"\\([A-Za-z]+|[{}])")
+_LATEX_COMMAND_RE = re.compile(r"\\([A-Za-z]+|[{}%*$#&_,;:! ])")
+_LATEX_LITERAL_CHARS = "{}%*$#&_"
+_LATEX_SPACES = {"quad": "  ", "qquad": "    ", ",": " ", ":": " ", ";": " ", " ": " ", "!": ""}
 
 
 def _command_atom(source: str, index: int) -> tuple[str, int] | None:
@@ -119,18 +125,24 @@ def _command_atom(source: str, index: int) -> tuple[str, int] | None:
     return source[index:end], end
 
 
-def _convert_fraction(source: str) -> str | None:
+def _fraction_arguments(source: str) -> tuple[str, str, int] | None:
     for command in ("\\dfrac", "\\tfrac", "\\frac", "\\cfrac"):
         if source.startswith(command):
             numerator, pos = _balanced_arg(source, len(command))
-            denominator, pos = _balanced_arg(source, pos)
-
-            def format_part(part: str) -> str:
-                converted = "".join(_convert_plain(_normalize_latex(part)))
-                return f"({converted})" if len(converted) > 1 else converted
-
-            return f"{format_part(numerator)}/{format_part(denominator)}"
+            denominator, end = _balanced_arg(source, pos)
+            return (numerator, denominator, end) if numerator and denominator else None
     return None
+
+
+def _linear_fraction(numerator: str, denominator: str) -> str:
+    def format_part(part: str) -> str:
+        part = part.strip()
+        if re.fullmatch(r"(?:\d+(?:\.\d+)?|[A-Za-z])", part):
+            return part
+        converted = "".join(_convert_plain(_normalize_latex(part)))
+        return f"({part})" if len(converted) > 1 else part
+
+    return f"{format_part(numerator)}/{format_part(denominator)}"
 
 
 class _TextPart(NamedTuple):
@@ -143,6 +155,7 @@ class _TextPart(NamedTuple):
 
     text: str
     kind: str = "normal"
+    fraction: tuple[list[_TextPart], list[_TextPart]] | None = None
 
 
 @dataclass
@@ -161,9 +174,12 @@ _MathAtom = _TextAtom | _MatrixAtom
 def _merge_parts(parts: list[_TextPart]) -> list[_TextPart]:
     merged: list[_TextPart] = []
     for part in parts:
+        if part.fraction is not None:
+            merged.append(part)
+            continue
         if not part.text:
             continue
-        if merged and merged[-1].kind == part.kind:
+        if merged and merged[-1].fraction is None and merged[-1].kind == part.kind:
             previous = merged[-1]
             merged[-1] = _TextPart(previous.text + part.text, previous.kind)
         else:
@@ -173,7 +189,7 @@ def _merge_parts(parts: list[_TextPart]) -> list[_TextPart]:
 
 def _mark_parts(parts: list[_TextPart], kind: str) -> list[_TextPart]:
     return [
-        _TextPart(part.text, part.kind if part.kind != "normal" else kind)
+        part._replace(kind=kind) if part.kind == "normal" else part
         for part in parts
     ]
 
@@ -204,8 +220,11 @@ def _exponent_arg(source: str, index: int) -> tuple[str, int]:
     return source[index], index + 1
 
 
-def rich_parts(source: str, kind: str = "normal") -> list[_TextPart]:
-    """Convert plain/LaTeX math into normal, superscript and subscript parts."""
+def rich_parts(source: str, kind: str = "normal", *, stacked: bool = False) -> list[_TextPart]:
+    """Parse math into styled text and, for prose equations, stacked fractions."""
+    def parse(argument: str, style: str = kind) -> list[_TextPart]:
+        return rich_parts(argument, style, stacked=stacked)
+
     parts: list[_TextPart] = []
     index = 0
     while index < len(source):
@@ -214,7 +233,7 @@ def rich_parts(source: str, kind: str = "normal") -> list[_TextPart]:
             argument, position = _exponent_arg(source, index + 1)
             if argument:
                 exponent_kind = "sup" if char == "^" else "sub"
-                parts.extend(_mark_parts(rich_parts(argument), exponent_kind))
+                parts.extend(_mark_parts(parse(argument, "normal"), exponent_kind))
                 index = position
                 continue
             parts.append(_TextPart(char, kind))
@@ -225,22 +244,47 @@ def rich_parts(source: str, kind: str = "normal") -> list[_TextPart]:
                 parts.append(_TextPart(" ", kind))
                 index += 2
                 continue
-            fraction = _convert_fraction(source[index:])
+            fraction = _fraction_arguments(source[index:])
             if fraction is not None:
-                parts.extend(rich_parts(fraction, kind))
-                index += len(source[index:]) - len(_after_fraction(source[index:]))
+                numerator, denominator, consumed = fraction
+                if stacked:
+                    parts.append(_TextPart("", kind, (
+                        parse(numerator.strip(), "normal"), parse(denominator.strip(), "normal")
+                    )))
+                else:
+                    parts.extend(parse(_linear_fraction(numerator, denominator)))
+                index += consumed
                 continue
-            match = re.match(r"\\([A-Za-z]+|[{}])", source[index:])
+            match = _LATEX_COMMAND_RE.match(source, index)
             if not match:
                 parts.append(_TextPart(char, kind))
                 index += 1
                 continue
             command = match.group(1)
-            after_command = index + match.end()
-            if command in {"{", "}"}:
+            after_command = match.end()
+            if len(command) == 1 and command in _LATEX_LITERAL_CHARS:
                 parts.append(_TextPart(command, kind))
                 index = after_command
                 continue
+            if command in _LATEX_SPACES:
+                parts.append(_TextPart(_LATEX_SPACES[command], kind))
+                index = after_command
+                continue
+            if command == "sqrt":
+                root = re.match(r"(?:\[([^\]]+)\])?\s*", source[after_command:])
+                assert root is not None
+                start = after_command + root.end()
+                argument, position = _balanced_arg(source, start)
+                if argument:
+                    if root[1]:
+                        parts.extend(_mark_parts(parse(root[1], "normal"), "sup"))
+                    parts.append(_TextPart("√", kind))
+                    radicand = argument.strip()
+                    if len(radicand) > 1 and not radicand.isdecimal():
+                        radicand = f"({radicand})"
+                    parts.extend(parse(radicand))
+                    index = position
+                    continue
             if source[after_command : after_command + 1] == "{":
                 argument, position = _balanced_arg(source, after_command)
                 combined = command + argument
@@ -250,10 +294,10 @@ def rich_parts(source: str, kind: str = "normal") -> list[_TextPart]:
                     continue
                 if command in SYMBOL_MAP and command not in _STYLE_COMMANDS:
                     parts.append(_TextPart(SYMBOL_MAP[command], kind))
-                    parts.extend(rich_parts(argument, kind))
+                    parts.extend(parse(argument))
                     index = position
                     continue
-                parts.extend(rich_parts(argument, kind))
+                parts.extend(parse(argument))
                 index = position
                 continue
             if command in _STYLE_COMMANDS:
@@ -265,7 +309,7 @@ def rich_parts(source: str, kind: str = "normal") -> list[_TextPart]:
                     "textsf", "texttt", "operatorname",
                 }:
                     argument, position = _balanced_arg(source, after_command)
-                    parts.extend(rich_parts(argument, kind))
+                    parts.extend(parse(argument))
                     index = position
                 else:
                     index = after_command
@@ -372,12 +416,12 @@ def _math_atoms(source: str) -> list[_MathAtom]:
             atoms.append(_MatrixAtom(value))
             continue
         text = str(value).replace("\n", " ")
-        parts = rich_parts(_normalize_latex(text))
+        parts = rich_parts(_normalize_latex(text), stacked=True)
         if parts:
             atoms.append(_TextAtom(parts))
     while atoms and isinstance(atoms[0], _TextAtom):
         first = atoms[0].parts
-        if not first or first[0].text.strip():
+        if not first or first[0].fraction is not None or first[0].text.strip():
             break
         leading = len(first[0].text) - len(first[0].text.lstrip())
         if leading >= len(first[0].text):
@@ -387,7 +431,7 @@ def _math_atoms(source: str) -> list[_MathAtom]:
         break
     while atoms and isinstance(atoms[-1], _TextAtom):
         last = atoms[-1].parts
-        if not last or last[-1].text.strip():
+        if not last or last[-1].fraction is not None or last[-1].text.strip():
             break
         trailing = len(last[-1].text) - len(last[-1].text.rstrip())
         if trailing >= len(last[-1].text):
@@ -445,12 +489,10 @@ def _convert_plain(source: str) -> list[str]:
                 out.append("")
                 index += 2
                 continue
-            fraction = _convert_fraction(source[index:])
+            fraction = _fraction_arguments(source[index:])
             if fraction is not None:
-                # Convert commands inside numerator/denominator too (\sqrt etc.).
-                fraction = "".join(_convert_plain(fraction))
-                consumed = len(source[index:]) - len(_after_fraction(source[index:]))
-                out.append(fraction)
+                numerator, denominator, consumed = fraction
+                out.append("".join(_convert_plain(_linear_fraction(numerator, denominator))))
                 index += consumed
                 continue
             match = re.match(r"\\([A-Za-z]+|[{}])", source[index:])
@@ -574,16 +616,6 @@ def latex_to_lines(source: str) -> list[str]:
     return [line for line in lines if line.strip()]
 
 
-def _after_fraction(source: str) -> str:
-    """Return the remainder of ``source`` after a leading \\frac{a}{b}."""
-    for command in ("\\dfrac", "\\tfrac", "\\frac", "\\cfrac"):
-        if source.startswith(command):
-            _, pos = _balanced_arg(source, len(command))
-            _, pos = _balanced_arg(source, pos)
-            return source[pos:]
-    return source
-
-
 def has_symbol(text: str) -> bool:
     return any(char in SYMBOL_CHARS for char in text)
 
@@ -609,15 +641,68 @@ _ROW_HEIGHT_RATIO = 1.45
 _SUP_SCALE = 0.72
 _SUP_RISE = 0.48   # fraction of the base font size above the baseline
 _SUB_DROP = 0.22   # fraction of the base font size below the baseline
+_FRACTION_SCALE = 0.78
+_FRACTION_AXIS = 0.27
+_FRACTION_GAP = 0.16
 
 
 def _part_width(part: _TextPart, cell_px: float) -> float:
     scale = 1.0 if part.kind == "normal" else _SUP_SCALE
+    if part.fraction is not None:
+        width = max(_parts_width(row, cell_px * _FRACTION_SCALE) for row in part.fraction)
+        return (width + 0.45 * cell_px) * scale
     return len(part.text) * cell_px * scale
 
 
 def _parts_width(parts: list[_TextPart], cell_px: float) -> float:
     return sum(_part_width(part, cell_px) for part in parts)
+
+
+def _script_offset(kind: str, font_px: float) -> float:
+    return {"sup": -font_px * _SUP_RISE, "sub": font_px * _SUB_DROP}.get(kind, 0.0)
+
+
+def _parts_extents(parts: list[_TextPart], font_px: float) -> tuple[float, float]:
+    """Measure the height above and below a row's baseline."""
+    ascent = descent = 0.0
+    for part in parts:
+        size = font_px if part.kind == "normal" else font_px * _SUP_SCALE
+        offset = _script_offset(part.kind, font_px)
+        if part.fraction is None:
+            above, below = size * 0.85, size * 0.28
+        else:
+            numerator, denominator = part.fraction
+            above = sum(_parts_extents(numerator, size * _FRACTION_SCALE))
+            below = sum(_parts_extents(denominator, size * _FRACTION_SCALE))
+            above += size * (_FRACTION_AXIS + _FRACTION_GAP)
+            below += size * (_FRACTION_GAP - _FRACTION_AXIS)
+        ascent = max(ascent, above - offset)
+        descent = max(descent, below + offset)
+    return ascent, descent
+
+
+def _fraction_markup(
+    rows: tuple[list[_TextPart], list[_TextPart]], x: float, baseline: float,
+    width: float, size: float, cell_px: float,
+) -> str:
+    numerator, denominator = rows
+    row_size = size * _FRACTION_SCALE
+    row_cell = cell_px * _FRACTION_SCALE
+    bar = baseline - size * _FRACTION_AXIS
+    gap = size * _FRACTION_GAP
+    numerator_y = bar - gap - _parts_extents(numerator, row_size)[1]
+    denominator_y = bar + gap + _parts_extents(denominator, row_size)[0]
+    numerator_x = x + (width - _parts_width(numerator, row_cell)) / 2
+    denominator_x = x + (width - _parts_width(denominator, row_cell)) / 2
+    return (
+        '<g class="nlmdf-fraction"><g class="nlmdf-numerator">'
+        + rich_text_markup(numerator, numerator_x, numerator_y, row_size, row_cell)
+        + '</g><line '
+        f'x1="{x:.2f}" y1="{bar:.2f}" x2="{x + width:.2f}" y2="{bar:.2f}" '
+        'stroke="currentColor" stroke-width="0.8"/><g class="nlmdf-denominator">'
+        + rich_text_markup(denominator, denominator_x, denominator_y, row_size, row_cell)
+        + "</g></g>"
+    )
 
 
 def rich_text_markup(
@@ -636,25 +721,22 @@ def rich_text_markup(
     nodes: list[str] = []
     cursor = x
     for part in parts:
-        if part.kind == "sup":
-            part_y = baseline - font_px * _SUP_RISE
-            part_font = font_px * _SUP_SCALE
-            css_class = " nlmdf-sup"
-        elif part.kind == "sub":
-            part_y = baseline + font_px * _SUB_DROP
-            part_font = font_px * _SUP_SCALE
-            css_class = " nlmdf-sub"
-        else:
-            part_y = baseline
-            part_font = font_px
-            css_class = ""
+        scale = 1.0 if part.kind == "normal" else _SUP_SCALE
+        part_y = baseline + _script_offset(part.kind, font_px)
+        part_font = font_px * scale
+        width = _part_width(part, cell_px)
+        if part.fraction is not None:
+            nodes.append(_fraction_markup(part.fraction, cursor, part_y, width, part_font, cell_px * scale))
+            cursor += width
+            continue
+        css_class = "" if part.kind == "normal" else f"nlmdf-{part.kind}"
         nodes.append(
-            f'<text class="{css_class.strip()}" x="{cursor:.2f}" y="{part_y:.2f}" '
+            f'<text class="{css_class}" x="{cursor:.2f}" y="{part_y:.2f}" '
             f'xml:space="preserve" font-family="{_FONT}" '
             f'font-size="{part_font:.2f}px" style="white-space:pre">'
             f"{html_lib.escape(part.text)}</text>"
         )
-        cursor += _part_width(part, cell_px)
+        cursor += width
     return "".join(nodes)
 
 
@@ -739,7 +821,11 @@ def _render_atoms_svg(atoms: list[_MathAtom], font_px: float, cell_px: float) ->
         max(matrix_heights, default=0.0) / 2 - font_px * 0.65 + 2,
     )
     pad_bottom = max(font_px * 0.18, pad_top)
-    baseline = pad_top + font_px
+    extents = [
+        _parts_extents(atom.parts, font_px) for atom in atoms if isinstance(atom, _TextAtom)
+    ]
+    baseline = max(pad_top + font_px, max((above for above, _ in extents), default=0) + 2)
+    descent = max(font_px * 0.35 + pad_bottom, max((below for _, below in extents), default=0))
     cursor = 2.0
     pieces: list[str] = []
     for atom in atoms:
@@ -751,10 +837,11 @@ def _render_atoms_svg(atoms: list[_MathAtom], font_px: float, cell_px: float) ->
         pieces.append(markup)
         cursor += width
     width = cursor + 2
-    height = pad_top + font_px * 1.35 + pad_bottom + 2
+    height = baseline + descent + 2
     return (
         f'<svg class="nlmdf-symbol-svg" viewBox="0 0 {width:.2f} {height:.2f}" '
         f'width="{width:.2f}" height="{height:.2f}" '
+        f'style="vertical-align:-{height - baseline:.2f}px" '
         'preserveAspectRatio="xMinYMin meet" role="img" '
         'aria-label="Mathematical expression">'
         + "".join(pieces)
@@ -894,6 +981,11 @@ def convert_math_source(source: str) -> str:
     # LaTeX math always uses SVG so matrices/commands keep their exact grid,
     # even when the rendered glyphs are plain ASCII digits. "10 Marks" and
     # other plain prose accidentally fenced as math stays ordinary text.
-    if not has_symbol(plain) and not re.search(r"\\[A-Za-z]+", source):
+    has_layout = any(
+        isinstance(atom, _MatrixAtom)
+        or any(part.kind != "normal" or part.fraction is not None for part in atom.parts)
+        for atom in atoms
+    )
+    if not has_layout and not has_symbol(plain) and not re.search(r"\\[A-Za-z]+", source):
         return html_lib.escape(plain)
     return _render_atoms_svg(atoms, _FONT_PX, _CELL_PX)

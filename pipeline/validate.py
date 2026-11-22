@@ -1,8 +1,8 @@
 """Render verification -- runs after every PDF and writes report.json.
 
-Five checks are automatic; the sixth builds a contact sheet for a quick human
-skim. A failed automatic check marks the PDF as failed and the report points
-at study-notes.html, which is always written as an offline fallback.
+Automatic checks are supplemented by a contact sheet for a quick human skim.
+A failed check marks the export as failed and the report points at
+study-notes.html, which is always written as an offline fallback.
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ from .common import (
     write_json,
 )
 from .mermaid_validate import extract_mermaid_sources, validate_mermaid_blocks
+from .fidelity import compare_source
 from .structure import normalize_structure
 
 _TOLERANCE = 0.02
@@ -60,6 +61,7 @@ def _browser_metrics(html_path: str | Path, config: dict[str, Any]) -> dict[str,
             state["dom_symbol_svg"] = page.locator(".nlmdf-symbol-svg").count()
             state["dom_katex_errors"] = page.locator(".katex-error").count()
             state["dom_tables"] = page.locator("table").count()
+            state["dom_list_items"] = page.locator("main li:not(.footnote-item)").count()
             state["dom_mermaid_figures"] = page.locator(".mermaid-figure").count()
             state["dom_error_svgs"] = page.evaluate(
                 """() => Array.from(document.querySelectorAll('.mermaid-figure svg'))
@@ -102,7 +104,7 @@ def _browser_metrics(html_path: str | Path, config: dict[str, Any]) -> dict[str,
             browser.close()
 
 
-def _markdown_token_counts(text: str) -> tuple[int, int]:
+def _markdown_token_counts(text: str) -> tuple[int, int, int]:
     # Count the structure the renderer actually sees, so a table that
     # NotebookLM emitted inside a numbered line is expected as a table.
     tokens = MarkdownIt("commonmark").enable("table").parse(normalize_structure(text))
@@ -112,7 +114,8 @@ def _markdown_token_counts(text: str) -> tuple[int, int]:
         for token in tokens
         if token.type == "fence" and token.info.strip().lower() == "mermaid"
     )
-    return tables, mermaid
+    list_items = sum(1 for token in tokens if token.type == "list_item_open")
+    return tables, mermaid, list_items
 
 
 def _pdf_text(pdf_path: str | Path) -> str:
@@ -165,6 +168,25 @@ def _check(name: str, passed: bool, detail: str, **extra: Any) -> dict[str, Any]
     }
 
 
+def _source_check(
+    markdown: str, pdf_text: str, html: Path, strip_citations: bool, config: dict[str, Any]
+) -> dict[str, Any]:
+    comparison = compare_source(
+        markdown, pdf_text, html.read_text(encoding="utf-8") if html.is_file() else None,
+        remove_citations=strip_citations, config=config,
+    )
+    detail = ", ".join(
+        f"{item['unmatched_blocks']}/{item['expected_blocks']} source blocks unmatched in {name.upper()}"
+        for name, item in comparison.items()
+    )
+    return _check(
+        "source_fidelity",
+        not any(item["unmatched_blocks"] for item in comparison.values()),
+        detail,
+        outputs=comparison,
+    )
+
+
 def validate(
     pdf_path: str | Path,
     html_path: str | Path | None = None,
@@ -172,6 +194,8 @@ def validate(
     meta_path: str | Path | None = None,
     report_path: str | Path | None = None,
     config: dict[str, Any] | None = None,
+    *,
+    source_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Run all verification checks and write report.json."""
     config = config or load_config()
@@ -179,7 +203,10 @@ def validate(
     if not pdf_file.exists():
         raise FileNotFoundError(f"PDF not found: {pdf_file}")
     if html_path is None:
-        html_file = pdf_file.with_name("study-notes.html")
+        html_file = (
+            pdf_file.with_suffix(".html") if source_path is not None and enhanced_path is None
+            else pdf_file.with_name("study-notes.html")
+        )
     else:
         html_file = Path(html_path)
     if enhanced_path is None:
@@ -195,12 +222,23 @@ def validate(
     else:
         report_file = Path(report_path)
 
+    if source_path is not None and enhanced_path is None:
+        source = Path(source_path).read_text(encoding="utf-8")
+        check = _source_check(
+            source, _pdf_text(pdf_file), html_file, bool(config.get("strip_citations", True)), config,
+        )
+        report = {"pdf": str(pdf_file.resolve()), "passed": check["pass"], "checks": [check]}
+        write_json(report_file, report)
+        print(f"validate: {'PASS' if report['passed'] else 'FAIL'} -> {report_file}")
+        print(f"  {check['detail']}")
+        return report
+
     markdown_text = enhanced_file.read_text(encoding="utf-8")
     manifest = read_json(meta_file) if meta_file.exists() else {}
     expected = manifest.get("expected", {})
     metrics = _browser_metrics(html_file, config)
     extracted = _pdf_text(pdf_file)
-    markdown_tables, mermaid_blocks = _markdown_token_counts(markdown_text)
+    markdown_tables, _, markdown_list_items = _markdown_token_counts(markdown_text)
 
     checks: list[dict[str, Any]] = []
 
@@ -214,8 +252,12 @@ def validate(
         _check(
             "math",
             katex_errors == 0 and rendered_math == expected_math,
-            f"{rendered_math}/{expected_math} formulas rendered, "
-            f"{katex_errors} KaTeX error elements",
+            (
+                "No formulas found in the input. Formula preservation could not be checked."
+                if expected_math == rendered_math == katex_errors == 0
+                else f"{rendered_math}/{expected_math} formulas rendered, "
+                     f"{katex_errors} KaTeX error elements"
+            ),
             expected=expected_math,
             actual=rendered_math,
             errors=katex_errors,
@@ -249,6 +291,24 @@ def validate(
             f"{actual_tables} tables in HTML vs {expected_tables} in source",
             expected=expected_tables,
             actual=actual_tables,
+        )
+    )
+
+    rendered_list_items = int(metrics.get("dom_list_items", 0))
+    shortfalls = manifest.get("list_item_shortfalls", [])
+    details = [f"{rendered_list_items}/{markdown_list_items} Markdown list items rendered in HTML"]
+    details.extend(
+        f"Answer {item['index']}: {item['actual']}/{item['expected']} captured list items reached clean Markdown"
+        for item in shortfalls
+    )
+    checks.append(
+        _check(
+            "list_items",
+            not shortfalls and rendered_list_items == markdown_list_items,
+            ". ".join(details),
+            expected=markdown_list_items,
+            actual=rendered_list_items,
+            capture_shortfalls=shortfalls,
         )
     )
 
@@ -317,6 +377,14 @@ def validate(
         )
     )
 
+    source = Path(source_path).read_text(encoding="utf-8") if source_path is not None else manifest.get("source_markdown")
+    if source is not None:
+        checks.append(_source_check(
+            source, extracted, html_file,
+            bool(manifest.get("strip_citations", config.get("strip_citations", True))),
+            config,
+        ))
+
     # 5. Missing symbols -------------------------------------------------------
     plain = plain_text_from_markdown(markdown_text)
     non_ascii = sorted({char for char in plain if ord(char) > 127})
@@ -367,13 +435,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("pdf", help="study-notes.pdf")
     parser.add_argument("--html", help="study-notes.html")
     parser.add_argument("--md", help="enhanced.md")
+    parser.add_argument("--source-md", help="initial chat Markdown to compare with the exported PDF and HTML")
     parser.add_argument("--meta", help="clean.meta.json")
     parser.add_argument("--report", help="report.json output")
     parser.add_argument("--config", help="config.yaml")
     args = parser.parse_args(argv)
 
     report = validate(
-        args.pdf, args.html, args.md, args.meta, args.report, load_config(args.config)
+        args.pdf, args.html, args.md, args.meta, args.report, load_config(args.config),
+        source_path=args.source_md,
     )
     return 0 if report["passed"] else 1
 

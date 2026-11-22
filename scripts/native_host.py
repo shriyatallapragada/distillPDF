@@ -125,6 +125,29 @@ def unique_path(folder: Path, name: str) -> Path:
     return folder / f"{stem}-new{suffix}"
 
 
+def _math_capture_check(chat: dict[str, Any]) -> dict[str, Any] | None:
+    """Flag math the extension saw but could not read from the page DOM."""
+    warnings: list[str] = []
+    for turn in chat.get("turns", []):
+        if not isinstance(turn, dict):
+            continue
+        for warning in turn.get("math_warnings", []) or []:
+            text = str(warning).strip()
+            if text:
+                warnings.append(text)
+    if not warnings:
+        return None
+    preview = "; ".join(warnings[:3])
+    return {
+        "name": "math_capture",
+        "status": "fail",
+        "pass": False,
+        "detail": f"{len(warnings)} recognizable math element(s) could not be captured: {preview}",
+        "expected": 0,
+        "actual": len(warnings),
+    }
+
+
 def build(chat: dict[str, Any]) -> dict[str, Any]:
     """Run the four stages and copy the two finished files to Downloads."""
     if not isinstance(chat, dict) or not chat.get("turns"):
@@ -161,24 +184,45 @@ def build(chat: dict[str, Any]) -> dict[str, Any]:
             except Exception as exc:  # never block the files because of a check
                 report = {"passed": False, "error": f"{type(exc).__name__}: {exc}"}
 
+        math_check = _math_capture_check(chat)
+        if math_check:
+            report.setdefault("checks", []).append(math_check)
+            report["passed"] = False
+
         html_source = root / "study-notes.html"
         pdf_source = root / "study-notes.pdf"
         if not html_source.exists() or not pdf_source.exists():
             return {"ok": False, "error": "The renderer did not produce both files."}
 
-        html_out = unique_path(destination, "study-notes.html")
-        pdf_out = unique_path(destination, "study-notes.pdf")
+        input_source = chat.get("input_source")
+        pasted = input_source == "pasted_markdown"
+        stem = "study-notes-from-markdown" if pasted else "study-notes"
+        html_out = unique_path(destination, f"{stem}.html")
+        pdf_out = unique_path(destination, f"{stem}.pdf")
         html_out.write_bytes(html_source.read_bytes())
         pdf_out.write_bytes(pdf_source.read_bytes())
+        report_out = unique_path(destination, f"{pdf_out.stem}-validation.json")
+        write_json(report_out, {
+            **report,
+            "input_source": "pasted_markdown" if pasted else "checked_replies",
+            "pdf": str(pdf_out),
+            "html_fallback": str(html_out),
+            "checks": [check for check in report.get("checks", []) if check["status"] != "manual"],
+        })
 
         return {
             "ok": True,
             "html": str(html_out),
             "pdf": str(pdf_out),
+            "report": str(report_out),
             "answers": len(manifest["answers"]),
             "passed": bool(report.get("passed", False)),
             "checks": [
-                {"name": check["name"], "status": check["status"]}
+                {
+                    key: check[key]
+                    for key in ("name", "status", "expected")
+                    if key in check
+                }
                 for check in report.get("checks", [])
             ],
             "model": config.get("model"),

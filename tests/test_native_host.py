@@ -49,6 +49,20 @@ def test_unique_path_avoids_overwriting(monkeypatch, tmp_path):
     assert host.unique_path(tmp_path, "study-notes.pdf").name == "study-notes (2).pdf"
 
 
+def test_math_capture_warning_is_surfaced():
+    host = load_host()
+    assert host._math_capture_check({"turns": [{"markdown": "plain prose"}]}) is None
+    check = host._math_capture_check({
+        "turns": [{"markdown": "plain prose", "math_warnings": ["garbled math"]}]
+    })
+    assert check is not None
+    assert check["name"] == "math_capture"
+    assert check["status"] == "fail"
+    assert check["expected"] == 0
+    assert check["actual"] == 1
+    assert "garbled math" in check["detail"]
+
+
 def test_installer_prepares_runtime_with_venv_python(monkeypatch, tmp_path):
     spec = importlib.util.spec_from_file_location(
         "installer_under_test", ROOT / "scripts" / "install_native_host.py"
@@ -100,3 +114,4 @@ def test_build_writes_pdf_and_html_directly(monkeypatch, tmp_path):
     assert "study-notes.pdf" == pdf.name or pdf.name.startswith("study-notes (")
     assert "study-notes.html" == html.name or html.name.startswith("study-notes (")
     assert "Local build" in html.read_text(encoding="utf-8")
+    assert all(check["name"] != "math_capture" for check in response["checks"])

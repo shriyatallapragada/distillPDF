@@ -222,7 +222,7 @@ async function followBuild() {
 document.getElementById('build').addEventListener('click', function () {
   send('NLK_BUILD', undefined, lastTab).then(function (result) {
     if (result && result.ok && result.started) {
-      note('Building study-notes.pdf and study-notes.html…');
+      note('Building PDF and HTML locally…');
       followBuild();
     } else if (result && result.error) {
       note(result.error);

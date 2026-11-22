@@ -29,7 +29,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_config(check)
 
     run = sub.add_parser("all", help="run clean -> enhance -> render -> validate")
-    run.add_argument("chat", help="chat.json captured from NotebookLM")
+    run.add_argument("chat", help="captured chat.json or the original chat Markdown (.md)")
     run.add_argument("--outdir", help="output directory (default: <chat dir>/out)")
     run.add_argument("--offline", action="store_true", help="skip the Ollama call")
     run.add_argument("--instructions", help="override user_instructions")
@@ -59,6 +59,7 @@ def _build_parser() -> argparse.ArgumentParser:
     stage.add_argument("pdf")
     stage.add_argument("--html")
     stage.add_argument("--md")
+    stage.add_argument("--source-md", help="initial chat Markdown to compare with the exported PDF and HTML")
     stage.add_argument("--meta")
     stage.add_argument("--report")
     _add_config(stage)
@@ -164,6 +165,7 @@ def main(argv: list[str] | None = None) -> int:
             args.meta,
             args.report,
             config,
+            source_path=args.source_md,
         )
         return 0 if report["passed"] else 1
 

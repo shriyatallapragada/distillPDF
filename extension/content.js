@@ -126,6 +126,8 @@
         role: 'assistant',
         markdown: converted.markdown,
         latex: converted.latex,
+        mathWarnings: converted.mathWarnings || [],
+        listItems: converted.listItems,
         words: wordCount(converted.markdown),
         element: element
       });
@@ -268,6 +270,7 @@
         role: 'assistant',
         markdown: markdown,
         latex: [],
+        mathWarnings: [],
         words: wordCount(markdown),
         element: selection.anchorNode && selection.anchorNode.parentElement
       }]);
@@ -289,6 +292,8 @@
           role: 'assistant',
           markdown: turn.markdown,
           latex: turn.latex,
+          math_warnings: turn.mathWarnings || [],
+          list_items: turn.listItems,
           index: turn.index
         };
       })
@@ -297,14 +302,17 @@
 
   function fileName(path) { return String(path || '').split(/[\\/]/).pop(); }
 
-  /* No chat.json download: the selected answers go straight to the local
-     native helper, which writes study-notes.pdf and study-notes.html into the
-     browser's Downloads folder. The helper runs the same Python pipeline as
-     the command line, so the output is identical. */
-  function buildDocuments() {
-    merge(collect());
-    renderPanel();
+  /* Send the chosen input directly to the local native helper. */
+  function buildDocuments(markdown) {
+    if (markdown === undefined) {
+      merge(collect());
+      renderPanel();
+    }
     const data = payload();
+    data.input_source = markdown === undefined ? 'checked_replies' : 'pasted_markdown';
+    if (markdown !== undefined) {
+      data.turns = [{ role: 'assistant', markdown: markdown, index: 1 }];
+    }
     if (!data.turns.length) {
       status('Pick at least one answer before brewing.');
       return { ok: false, error: 'No answers selected.' };
@@ -321,9 +329,17 @@
         return;
       }
       if (response && response.ok) {
+        const missingListItems = (response.checks || []).some(function (check) {
+          return check.name === 'list_items' && check.status === 'fail';
+        });
+        const math = (response.checks || []).find(function (check) { return check.name === 'math'; });
+        const input = markdown === undefined ? 'checked replies' : 'pasted Markdown';
+        const mathStatus = math && math.expected === 0 ? ' No formulas were captured from this input.' : '';
+        const report = response.report ? ' See ' + fileName(response.report) + '.' : '';
         status('Saved ' + fileName(response.pdf) + ' and ' + fileName(response.html) +
-          ' (' + response.answers + ' answers).' +
-          (response.passed ? '' : ' Export checks flagged a possible rendering issue.'));
+          ' from ' + input + '.' + mathStatus +
+          (missingListItems ? ' Export checks flagged missing list items.' :
+            (response.passed ? '' : ' Export checks flagged a possible rendering issue.')) + report);
       } else {
         status('Build failed: ' + ((response && response.error) || 'unknown error'));
       }
@@ -357,10 +373,18 @@
       '<div class="nl-kebab-row">' +
       '<button class="nl-kebab-btn quiet" data-nlk-action="highlight">Add highlighted text</button>' +
       '</div>' +
+      '<details class="nl-kebab-paste"><summary>Paste Markdown with LaTeX</summary>' +
+      '<textarea rows="4" aria-label="Original chat Markdown" data-nlk-markdown></textarea></details>' +
       '<div class="nl-kebab-row">' +
-      '<button class="nl-kebab-btn primary" data-nlk-action="export">Build PDF + HTML</button>' +
+      '<button class="nl-kebab-btn primary" data-nlk-action="export">Build PDF + HTML from checked replies</button>' +
       '</div>' +
       '<button class="nl-kebab-link" data-nlk-action="scan">Refresh answers</button>';
+    const markdownInput = panel.querySelector('[data-nlk-markdown]');
+    const buildButton = panel.querySelector('[data-nlk-action="export"]');
+    markdownInput.addEventListener('input', function () {
+      buildButton.textContent = 'Build PDF + HTML from ' +
+        (markdownInput.value.trim() ? 'pasted Markdown' : 'checked replies');
+    });
     panel.addEventListener('change', function (event) {
       const input = event.target.closest('[data-nlk-check]');
       if (!input) return;
@@ -377,12 +401,17 @@
       if (action === 'all') { toggleAll(true); status('All answers picked.'); }
       if (action === 'none') { toggleAll(false); status('Basket emptied.'); }
       if (action === 'highlight') addHighlight();
-      if (action === 'export') buildDocuments();
+      if (action === 'export') buildPanelInput();
       if (action === 'close') closePanel();
     });
     (document.body || document.documentElement).appendChild(panel);
     state.panel = panel;
     renderPanel();
+  }
+
+  function buildPanelInput() {
+    const markdown = state.panel?.querySelector('[data-nlk-markdown]')?.value;
+    return buildDocuments(markdown?.trim() ? markdown : undefined);
   }
 
   chrome.runtime.onMessage.addListener(function (message, sender, reply) {
@@ -436,7 +465,7 @@
         reply({ ok: true, data: payload() });
         return true;
       case 'NLK_BUILD':
-        reply(buildDocuments());
+        reply(buildPanelInput());
         return true;
       default:
         return false;

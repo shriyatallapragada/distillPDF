@@ -164,11 +164,17 @@ hr {
 .math-source { color: var(--ink); }
 .math-source.display { display: block; }
 .nlmdf-symbol { color: var(--ink); }
-.nlmdf-symbol.display { display: block; }
+.nlmdf-symbol:not(.display) { margin-inline: 0.08em; }
+.nlmdf-symbol.display {
+  display: block;
+  margin: 0.35em 0 0.55em;
+  break-inside: avoid;
+}
 .nlmdf-symbol-svg {
   display: inline-block;
   vertical-align: -0.15em;
   max-width: 100%;
+  height: auto;
   overflow: visible;
 }
 .katex-display {

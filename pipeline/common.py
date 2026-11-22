@@ -84,8 +84,15 @@ def write_json(path: str | Path, payload: Any) -> None:
 # chat.json handling
 # ---------------------------------------------------------------------------
 def load_chat(path: str | Path) -> dict[str, Any]:
-    """Accept either ``{"turns": [...]}`` or a bare list of turns."""
-    data = read_json(path)
+    """Load chat JSON or preserve a Markdown answer as a single turn."""
+    source = Path(path)
+    if source.suffix.lower() in {".md", ".markdown"}:
+        return {
+            "title": source.stem,
+            "source": f"markdown:{source.resolve()}",
+            "turns": [{"role": "assistant", "markdown": source.read_text(encoding="utf-8")}],
+        }
+    data = read_json(source)
     if isinstance(data, list):
         return {"turns": data}
     if not isinstance(data, dict) or "turns" not in data:
@@ -139,7 +146,7 @@ _CITATION_RES = (
     re.compile(r"【\s*\d+\s*】"),
     re.compile(r"\[\s*(?:citation|source)(?:\s+needed)?\s*\]", re.I),
 )
-_BULLET_RE = re.compile(r"(?m)^[ \t]*[*+-][ \t]+(.*)$")
+_BULLET_RE = re.compile(r"(?m)^([ \t]*)[*+-][ \t]+(.*)$")
 
 # Only whole, known conversational replies qualify for automatic removal.
 _NLM_INTRO_RE = re.compile(
@@ -193,7 +200,7 @@ def normalize_unicode(text: str) -> str:
         part = part.translate(_ZERO_WIDTH)
         for source, target in _SPACE_CHARS.items():
             part = part.replace(source, target)
-        return _BULLET_RE.sub(lambda m: f"- {m.group(1)}", part)
+        return _BULLET_RE.sub(r"\1- \2", part)
 
     text = _outside_fences(text, prose)
     return _inside_fences(text, lambda block: block.replace("\t", "    "))
@@ -220,14 +227,16 @@ def normalize_math_delimiters(text: str) -> str:
 
 
 def strip_citations(text: str) -> str:
-    """Drop citations without collapsing diagram columns or line indentation."""
+    """Drop prose citations while preserving math, code and indentation."""
 
     def prose(part: str) -> str:
+        part, protected = protect_content(part)
         for pattern in _CITATION_RES:
             part = pattern.sub("", part)
         # Only touches runs between visible characters: indentation, trailing
         # spaces and fenced diagrams are never rewritten.
-        return re.sub(r"(?<=\S)[ \t]{2,}(?=\S)", " ", part)
+        part = re.sub(r"(?<=\S)[ \t]{2,}(?=\S)", " ", part)
+        return restore_placeholders(part, protected)
 
     return _outside_fences(text, prose)
 

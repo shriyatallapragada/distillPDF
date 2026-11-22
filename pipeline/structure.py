@@ -44,7 +44,8 @@ _BLOCK_START_RE = re.compile(
 )
 # A line that is already a real list item (possibly nested) must keep its
 # marker and indentation. Only bare bold labels are converted into bullets.
-_EXISTING_LIST_RE = re.compile(r"^[ \t]{0,3}(?:[-*+]|\d+[.)])[ \t]+")
+_EXISTING_LIST_RE = re.compile(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+")
+_BOLD_ITEM_RE = re.compile(r"^([ ]{0,3})(\*\*[^*\n]+\*\*:?)\s*(.*)$")
 
 # The Chrome copy of the Bloch-sphere paragraph loses the "/" in ``θ/2`` and
 # the "^" on ``e^(iφ)``. Repair only that known sentence, never a diagram.
@@ -165,19 +166,24 @@ def _bulletize_bold_labels(part: str) -> str:
             index += 1
             continue
         match = _LABEL_RE.match(line)
-        if not match:
+        bold_item = _BOLD_ITEM_RE.match(line) if not match else None
+        if match:
+            indent, heading, raw_label = match.groups()
+            label = raw_label.replace("**", "").strip()
+            rest = line[match.end() :].strip()
+        elif bold_item:
+            indent, label, rest = bold_item.groups()
+            heading = None
+        else:
             result.append(split_inline(line))
             index += 1
             continue
 
-        indent, heading, raw_label = match.group(1), match.group(2), match.group(3)
-        label = raw_label.replace("**", "").strip()
         if not label:
             result.append(line)
             index += 1
             continue
 
-        rest = line[match.end() :].strip()
         result.append(f"{indent}- {label}")
         if rest:
             result.append(f"{indent}  {rest}")
@@ -192,12 +198,14 @@ def _bulletize_bold_labels(part: str) -> str:
                     lookahead = index + 1
                     while lookahead < len(lines) and not lines[lookahead].strip():
                         lookahead += 1
-                    if lookahead >= len(lines) or _BLOCK_START_RE.match(lines[lookahead]):
+                    if lookahead >= len(lines) or (
+                        _BLOCK_START_RE.match(lines[lookahead]) or _BOLD_ITEM_RE.match(lines[lookahead])
+                    ):
                         break
                     result.append("")
                     index += 1
                     continue
-                if _BLOCK_START_RE.match(following):
+                if _BLOCK_START_RE.match(following) or _BOLD_ITEM_RE.match(following):
                     break
                 result.append(f"{indent}  {following}")
                 index += 1
@@ -205,7 +213,7 @@ def _bulletize_bold_labels(part: str) -> str:
 
 
 def fix_bullets(text: str) -> str:
-    """Convert bold lettered subheadings into real Markdown bullet items."""
+    """Convert leading bold labels into bullets and retain existing list markers."""
     return _outside_fences(text, _bulletize_bold_labels)
 
 

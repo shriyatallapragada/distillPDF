@@ -125,6 +125,53 @@ def test_bold_lettered_label_becomes_bullet():
     assert "**A." not in body
 
 
+def test_bold_labels_become_list_items_and_keep_following_text():
+    body, _, _ = _markdown_to_html(
+        "**Quantum Oracle**\n\nSuppose we build one.\n\n"
+        "**Architecture:** Two registers.\n\n- **Existing item**\n"
+        "\nInline **emphasis** stays in prose."
+    )
+    assert body.count("<li>") == 3
+    assert "<p><strong>Quantum Oracle</strong></p>\n<p>Suppose we build one.</p>" in body
+    assert "<p>Inline <strong>emphasis</strong> stays in prose.</p>" in body
+
+
+def test_square_roots_keep_radicand_scope_and_ascii_powers_keep_layout():
+    body, _, _ = _markdown_to_html(r"$\sqrt{a+b}$ and $\sqrt[3]{8}$ and $x^2$")
+    assert "√(a+b)" in body
+    assert "√8" in body
+    assert body.count('class="nlmdf-sup"') == 2
+
+
+def test_born_rule_fractions_magnitudes_and_conjugate():
+    from xml.etree import ElementTree as ET
+
+    from pipeline.common import normalize_math_delimiters
+    from pipeline.fidelity import _visible_blocks
+
+    source = (
+        r"- **Probability of outcome \\(0\\)**: \\(P(0) = |\alpha|^2 = \alpha^\* \cdot \alpha\\)"
+        "\n\n" r"\\[\sqrt{\frac{2}{3}}|1\rangle,\quad \frac{16 i^2}{25}\\]"
+    )
+    body, _, count = _markdown_to_html(normalize_math_delimiters(source))
+    assert count == 3
+    assert 'class="nlmdf-sup"' in body
+    assert re.search(r'class="nlmdf-sup"[^>]*>\*</text>', body)
+    assert _visible_blocks(body)[0] == "Probability of outcome 0: P(0) = |α|2 = α* ⋅ α"
+    display_svg = re.findall(r"<svg\b.*?</svg>", body)[-1]
+    fractions = ET.fromstring(display_svg).findall(".//g[@class='nlmdf-fraction']")
+    assert len(fractions) == 2
+    for fraction in fractions:
+        numerator, bar, denominator = fraction
+        bar_y = float(bar.attrib["y1"])
+        assert all(float(glyph.attrib["y"]) < bar_y for glyph in numerator.findall("text"))
+        assert all(float(glyph.attrib["y"]) > bar_y for glyph in denominator.findall("text"))
+    numerator = fractions[1].find("g")
+    base, power = numerator.findall("text")
+    assert power.text == "2"
+    assert float(power.attrib["y"]) < float(base.attrib["y"])
+
+
 def test_nested_bold_label_keeps_whole_name():
     body, _, _ = _markdown_to_html("**D. Hadamard Gate (**H**)**Creates superposition.\n")
     assert "Hadamard Gate (H)" in body
@@ -265,9 +312,10 @@ def test_hadamard_fraction_and_root_two_are_restored():
         "H∣1⟩=2\u200b∣0⟩−∣1⟩\u200b=∣−⟩\n"
     )
     body, _, _ = _markdown_to_html(markdown)
-    assert "1/(√2)" in body
-    assert "(|0⟩ + |1⟩)/(√2)" in body
-    assert "(|0⟩ - |1⟩)/(√2)" in body
+    assert body.count('class="nlmdf-fraction"') == 3
+    assert body.count(">√2</text>") == 3
+    assert ">|0⟩ + |1⟩</text>" in body
+    assert ">|0⟩ - |1⟩</text>" in body
     assert "H∣0⟩=2" not in body
 
 

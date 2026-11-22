@@ -194,8 +194,25 @@ def main() -> None:
                 assert len(data["turns"]) == 1
                 turn = data["turns"][0]
                 assert "Gradient descent" in turn["markdown"]
+                assert "**Quantum Oracle**\n\nSuppose x*y*z." in turn["markdown"]
+                assert "**Architecture**\n\nThe algorithm begins." in turn["markdown"]
+                assert "- **First step**\n\n  Run the check.\n\n- Second step" in turn["markdown"]
+                assert r"- **1 Shared Entangled Bell Pair:** $|\beta_{00}\rangle = (|00\rangle+|11\rangle)/\sqrt{2}$" in turn["markdown"].splitlines()
+                assert "- **2 Classical Bits:** Communicated over a standard classical channel from Alice to Bob" in turn["markdown"].splitlines()
+                assert turn["markdown"].splitlines().count(
+                    r"- **Born amplitude:** $(-\frac{4i}{5})$"
+                ) == 1
+                assert "[9]" not in turn["markdown"]
+                assert turn["list_items"] == 5
                 assert "$\\theta_{t+1} = \\theta_t - \\eta \\nabla_\\theta L$" in turn["markdown"]
                 assert "$$\\eta \\le 1/L$$" in turn["markdown"]
+                assert "${|α|}^{2}$" in turn["markdown"]
+                assert r"$\frac{1}{\sqrt{\frac{2}{3}}}$" in turn["markdown"]
+                assert r"$|\alpha|^{2}$" in turn["markdown"]
+                assert r"$\sqrt{-1}$" in turn["markdown"]
+                assert r"(-\frac{4i}{5})" in turn["latex"]
+                assert r"|\alpha|^{2}" in turn["latex"]
+                assert r"\sqrt{-1}" in turn["latex"]
                 assert "\\theta_{t+1} = \\theta_t - \\eta \\nabla_\\theta L" in turn["latex"]
                 assert "| Symbol | Meaning |" in turn["markdown"]
                 assert "```python" in turn["markdown"]
@@ -206,6 +223,8 @@ def main() -> None:
                 assert "\n    │\u00a0\u00a0  \n" in turn["markdown"]
                 assert "\t" not in turn["markdown"]
                 assert "Spacing in prose wraps." in turn["markdown"]
+                assert "Unreadable math  keeps its prose." in turn["markdown"]
+                assert turn["math_warnings"] == ["unreadable math element"]
                 assert "Explain gradient descent" not in json.dumps(data)
                 print("export: one selected answer, exact LaTeX, table, code and whitespace")
 
@@ -215,6 +234,7 @@ def main() -> None:
                 all_data = selected_payload()
                 texts = [item["markdown"] for item in all_data["turns"]]
                 assert len(texts) == 4, texts
+                assert sum(bool(item["math_warnings"]) for item in all_data["turns"]) == 1
                 assert any("Gradient descent" in text for text in texts)
                 assert any("From chat to PDF" in text for text in texts)
                 assert any("How can I help" in text for text in texts)
